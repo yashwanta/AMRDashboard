@@ -1,4 +1,6 @@
-# Ubuntu Log Dashboard
+# AMRDashboard
+
+Pulling logs and creating dashboard for visibility.
 
 Self-contained dashboard for logs pulled from `logpull@10.216.4.59`.
 
