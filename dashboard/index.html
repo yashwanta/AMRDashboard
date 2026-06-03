@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ubuntu Log Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Ubuntu Server Logs</p>
+        <h1 id="hostTitle">10.216.4.59</h1>
+      </div>
+      <div class="meta">
+        <span id="generatedAt">Waiting for log pull</span>
+        <span id="archiveName"></span>
+      </div>
+    </header>
+
+    <main>
+      <section class="kpis" aria-label="Log summary">
+        <article>
+          <span>Files</span>
+          <strong id="filesTotal">0</strong>
+        </article>
+        <article>
+          <span>Lines</span>
+          <strong id="linesTotal">0</strong>
+        </article>
+        <article>
+          <span>Errors</span>
+          <strong id="errorsTotal">0</strong>
+        </article>
+        <article>
+          <span>Auth Failures</span>
+          <strong id="authFailures">0</strong>
+        </article>
+      </section>
+
+      <section class="grid two">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Severity Mix</h2>
+          </div>
+          <div id="severityBars" class="bars"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Hourly Volume</h2>
+          </div>
+          <canvas id="timelineChart" width="900" height="280"></canvas>
+        </div>
+      </section>
+
+      <section class="grid two">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Top Services</h2>
+          </div>
+          <div id="serviceList" class="rank-list"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Authentication</h2>
+          </div>
+          <div class="auth-grid">
+            <div>
+              <h3>Users</h3>
+              <div id="authUsers" class="rank-list compact"></div>
+            </div>
+            <div>
+              <h3>IPs</h3>
+              <div id="authIps" class="rank-list compact"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Files Needing Attention</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Lines</th>
+                <th>Critical</th>
+                <th>Errors</th>
+                <th>Warnings</th>
+              </tr>
+            </thead>
+            <tbody id="filesTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Recent Signals</h2>
+        </div>
+        <div id="signals" class="signals"></div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
+

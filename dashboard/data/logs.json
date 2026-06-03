@@ -1,0 +1,21 @@
+{
+  "generatedAt": "",
+  "sourceHost": "10.216.4.59",
+  "archive": "",
+  "totals": {
+    "files": 0,
+    "bytes": 0,
+    "lines": 0
+  },
+  "severities": {},
+  "topFiles": [],
+  "services": [],
+  "auth": {
+    "counts": {},
+    "users": [],
+    "ips": []
+  },
+  "timeline": [],
+  "recentSignals": [],
+  "skipped": []
+}

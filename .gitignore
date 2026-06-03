@@ -1,0 +1,7 @@
+data/archives/
+data/logs/
+*.tgz
+*.tar.gz
+__pycache__/
+.pytest_cache/
+
