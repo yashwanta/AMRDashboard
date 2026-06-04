@@ -9,7 +9,7 @@
   <body>
     <header class="app-header">
       <div>
-        <p class="eyebrow">Ubuntu Server Logs</p>
+        <p class="eyebrow">AMR Fleet Logs</p>
         <h1 id="hostTitle">10.216.4.59</h1>
       </div>
       <div class="meta">
@@ -21,36 +21,82 @@
     <main>
       <section class="kpis" aria-label="Log summary">
         <article>
-          <span>Files</span>
-          <strong id="filesTotal">0</strong>
+          <span>Data Connections</span>
+          <strong id="amrDataConnections">0</strong>
         </article>
         <article>
-          <span>Lines</span>
+          <span>Connection Loss</span>
+          <strong id="amrConnectionLoss">0</strong>
+        </article>
+        <article>
+          <span>Map Updates</span>
+          <strong id="amrMapUpdates">0</strong>
+        </article>
+        <article>
+          <span>Log Lines</span>
           <strong id="linesTotal">0</strong>
-        </article>
-        <article>
-          <span>Errors</span>
-          <strong id="errorsTotal">0</strong>
-        </article>
-        <article>
-          <span>Auth Failures</span>
-          <strong id="authFailures">0</strong>
         </article>
       </section>
 
       <section class="grid two">
         <div class="panel">
           <div class="panel-head">
-            <h2>Severity Mix</h2>
+            <h2>AMR Event Mix</h2>
           </div>
-          <div id="severityBars" class="bars"></div>
+          <div id="amrEventBars" class="bars"></div>
         </div>
         <div class="panel">
           <div class="panel-head">
-            <h2>Hourly Volume</h2>
+            <h2>AMR Event Timeline</h2>
           </div>
           <canvas id="timelineChart" width="900" height="280"></canvas>
         </div>
+      </section>
+
+      <section class="grid two">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>AMR / Robot Summary</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>AMR</th>
+                  <th>Data</th>
+                  <th>Loss</th>
+                  <th>Map</th>
+                </tr>
+              </thead>
+              <tbody id="amrTable"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>AMR Log Files</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>File</th>
+                  <th>Data</th>
+                  <th>Loss</th>
+                  <th>Map</th>
+                </tr>
+              </thead>
+              <tbody id="amrFilesTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Recent AMR Events</h2>
+        </div>
+        <div id="amrEvents" class="signals"></div>
       </section>
 
       <section class="grid two">
@@ -62,18 +108,9 @@
         </div>
         <div class="panel">
           <div class="panel-head">
-            <h2>Authentication</h2>
+            <h2>Severity Mix</h2>
           </div>
-          <div class="auth-grid">
-            <div>
-              <h3>Users</h3>
-              <div id="authUsers" class="rank-list compact"></div>
-            </div>
-            <div>
-              <h3>IPs</h3>
-              <div id="authIps" class="rank-list compact"></div>
-            </div>
-          </div>
+          <div id="severityBars" class="bars"></div>
         </div>
       </section>
 
@@ -99,7 +136,7 @@
 
       <section class="panel">
         <div class="panel-head">
-          <h2>Recent Signals</h2>
+          <h2>Other Recent Signals</h2>
         </div>
         <div id="signals" class="signals"></div>
       </section>
@@ -108,4 +145,3 @@
     <script src="app.js"></script>
   </body>
 </html>
-

@@ -167,6 +167,9 @@ main {
 .warning { background: var(--warning); }
 .info { background: var(--info); }
 .other { background: var(--other); }
+.dataConnection { background: var(--info); }
+.connectionLoss { background: var(--error); }
+.mapUpdate { background: #7c3aed; }
 
 canvas {
   display: block;
@@ -257,7 +260,7 @@ th:not(:first-child) {
 .badge {
   width: fit-content;
   min-width: 74px;
-  height: 26px;
+  min-height: 26px;
   padding: 5px 9px;
   border-radius: 999px;
   color: #fff;
@@ -304,4 +307,3 @@ th:not(:first-child) {
     grid-template-columns: 1fr;
   }
 }
-

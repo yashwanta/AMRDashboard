@@ -15,6 +15,17 @@
     "users": [],
     "ips": []
   },
+  "amr": {
+    "counts": {
+      "dataConnection": 0,
+      "connectionLoss": 0,
+      "mapUpdate": 0
+    },
+    "robots": [],
+    "files": [],
+    "timeline": [],
+    "recent": []
+  },
   "timeline": [],
   "recentSignals": [],
   "skipped": []

@@ -1,6 +1,12 @@
 const fmt = new Intl.NumberFormat();
 
 const severityOrder = ["critical", "error", "warning", "info", "other"];
+const amrEventLabels = {
+  dataConnection: "Data Connection",
+  connectionLoss: "Connection Loss",
+  mapUpdate: "Map Update",
+};
+const amrEventOrder = ["dataConnection", "connectionLoss", "mapUpdate"];
 
 function byId(id) {
   return document.getElementById(id);
@@ -30,6 +36,29 @@ function renderBars(severities) {
     row.className = "bar-row";
     row.innerHTML = `
       <span>${name}</span>
+      <div class="track"><div class="fill ${name}" style="width:${pct}%"></div></div>
+      <strong>${fmt.format(value)}</strong>
+    `;
+    container.appendChild(row);
+  });
+}
+
+function renderAmrBars(counts) {
+  const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
+  const container = byId("amrEventBars");
+  container.innerHTML = "";
+  if (!total) {
+    container.innerHTML = '<p class="empty">No AMR connection or map events found yet.</p>';
+    return;
+  }
+
+  amrEventOrder.forEach((name) => {
+    const value = counts[name] || 0;
+    const pct = total ? Math.round((value / total) * 100) : 0;
+    const row = document.createElement("div");
+    row.className = "bar-row";
+    row.innerHTML = `
+      <span>${amrEventLabels[name]}</span>
       <div class="track"><div class="fill ${name}" style="width:${pct}%"></div></div>
       <strong>${fmt.format(value)}</strong>
     `;
@@ -73,6 +102,48 @@ function renderFiles(files) {
   });
 }
 
+function renderAmrTable(id, rows, keyName, emptyText) {
+  const body = byId(id);
+  body.innerHTML = "";
+  if (!rows || !rows.length) {
+    body.innerHTML = `<tr><td colspan="4" class="empty">${emptyText}</td></tr>`;
+    return;
+  }
+
+  rows.slice(0, 30).forEach((rowData) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td title="${escapeHtml(rowData[keyName])}">${escapeHtml(rowData[keyName])}</td>
+      <td>${fmt.format(rowData.dataConnection || 0)}</td>
+      <td>${fmt.format(rowData.connectionLoss || 0)}</td>
+      <td>${fmt.format(rowData.mapUpdate || 0)}</td>
+    `;
+    body.appendChild(row);
+  });
+}
+
+function renderAmrEvents(events) {
+  const container = byId("amrEvents");
+  container.innerHTML = "";
+  if (!events || !events.length) {
+    container.innerHTML = '<p class="empty">No AMR data connection, connection loss, or map update events found.</p>';
+    return;
+  }
+
+  events.slice(0, 120).forEach((event) => {
+    const row = document.createElement("article");
+    row.className = "signal";
+    row.innerHTML = `
+      <span class="badge ${event.type}">${amrEventLabels[event.type] || event.type}</span>
+      <div>
+        <p>${escapeHtml(event.message)}</p>
+        <div class="signal-meta">${event.timestamp || "No timestamp"} - AMR ${escapeHtml(event.amr || "unknown")} - ${escapeHtml(event.service || "unknown")} - ${escapeHtml(event.file)}</div>
+      </div>
+    `;
+    container.appendChild(row);
+  });
+}
+
 function renderSignals(signals) {
   const container = byId("signals");
   container.innerHTML = "";
@@ -88,7 +159,7 @@ function renderSignals(signals) {
       <span class="badge ${signal.severity}">${signal.severity}</span>
       <div>
         <p>${escapeHtml(signal.message)}</p>
-        <div class="signal-meta">${signal.timestamp || "No timestamp"} · ${signal.service || "unknown"} · ${signal.file}</div>
+        <div class="signal-meta">${signal.timestamp || "No timestamp"} - ${signal.service || "unknown"} - ${signal.file}</div>
       </div>
     `;
     container.appendChild(row);
@@ -118,7 +189,10 @@ function renderTimeline(items) {
   }
 
   const data = items.slice(-72);
-  const max = Math.max(...data.map((item) => item.count), 1);
+  const max = Math.max(
+    ...data.map((item) => (item.count || 0) + (item.dataConnection || 0) + (item.connectionLoss || 0) + (item.mapUpdate || 0)),
+    1
+  );
   const pad = 34;
   const barGap = 3;
   const barWidth = Math.max(3, (width - pad * 2) / data.length - barGap);
@@ -135,10 +209,21 @@ function renderTimeline(items) {
 
   data.forEach((item, index) => {
     const x = pad + index * (barWidth + barGap);
-    const h = Math.max(2, ((height - pad * 2) * item.count) / max);
-    const y = height - pad - h;
-    ctx.fillStyle = "#2563eb";
-    ctx.fillRect(x, y, barWidth, h);
+    const values = item.count !== undefined
+      ? [{ color: "#2563eb", value: item.count }]
+      : [
+          { color: "#0f766e", value: item.dataConnection || 0 },
+          { color: "#c2410c", value: item.connectionLoss || 0 },
+          { color: "#7c3aed", value: item.mapUpdate || 0 },
+        ];
+    let y = height - pad;
+    values.forEach((part) => {
+      if (!part.value) return;
+      const h = Math.max(2, ((height - pad * 2) * part.value) / max);
+      y -= h;
+      ctx.fillStyle = part.color;
+      ctx.fillRect(x, y, barWidth, h);
+    });
   });
 
   ctx.fillStyle = "#667071";
@@ -149,20 +234,24 @@ function renderTimeline(items) {
 async function init() {
   const response = await fetch("data/logs.json", { cache: "no-store" });
   const data = await response.json();
+  const amr = data.amr || {};
+  const amrCounts = amr.counts || {};
 
   setText("hostTitle", data.sourceHost || "Ubuntu Server");
   setText("generatedAt", data.generatedAt ? `Generated ${new Date(data.generatedAt).toLocaleString()}` : "Waiting for log pull");
   setText("archiveName", data.archive || "");
-  setText("filesTotal", fmt.format(count(data, ["totals", "files"])));
+  setText("amrDataConnections", fmt.format(amrCounts.dataConnection || 0));
+  setText("amrConnectionLoss", fmt.format(amrCounts.connectionLoss || 0));
+  setText("amrMapUpdates", fmt.format(amrCounts.mapUpdate || 0));
   setText("linesTotal", fmt.format(count(data, ["totals", "lines"])));
-  setText("errorsTotal", fmt.format(count(data, ["severities", "error"]) + count(data, ["severities", "critical"])));
-  setText("authFailures", fmt.format(count(data, ["auth", "counts", "failed"]) + count(data, ["auth", "counts", "invalid"])));
 
+  renderAmrBars(amrCounts);
+  renderTimeline(amr.timeline || []);
+  renderAmrTable("amrTable", amr.robots || [], "amr", "No AMR IDs found in the matched events.");
+  renderAmrTable("amrFilesTable", amr.files || [], "file", "No AMR event files found.");
+  renderAmrEvents(amr.recent || []);
   renderBars(data.severities || {});
-  renderTimeline(data.timeline || []);
   renderRank("serviceList", data.services || [], "No service activity parsed yet.");
-  renderRank("authUsers", data.auth?.users || [], "No auth users found.");
-  renderRank("authIps", data.auth?.ips || [], "No auth IPs found.");
   renderFiles(data.topFiles || []);
   renderSignals(data.recentSignals || []);
 }
@@ -170,4 +259,3 @@ async function init() {
 init().catch((error) => {
   document.body.innerHTML = `<main><section class="panel"><p class="empty">Unable to load dashboard data: ${escapeHtml(error.message)}</p></section></main>`;
 });
-
