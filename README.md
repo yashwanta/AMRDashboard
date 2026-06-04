@@ -9,19 +9,19 @@ Self-contained dashboard for logs pulled from `logpull@10.216.4.59`.
 Run this from PowerShell after SSH auth is configured for `logpull`:
 
 ```powershell
-.\scripts\pull-logs.ps1 -Host 10.216.4.59 -User logpull
+.\scripts\pull-logs.ps1 -RemoteHost 10.216.4.59 -User logpull
 ```
 
 If the account needs a key:
 
 ```powershell
-.\scripts\pull-logs.ps1 -Host 10.216.4.59 -User logpull -IdentityFile C:\path\to\key
+.\scripts\pull-logs.ps1 -RemoteHost 10.216.4.59 -User logpull -IdentityFile C:\path\to\key
 ```
 
 If `logpull` has passwordless sudo for `tar`, add `-UseSudo` to capture privileged logs:
 
 ```powershell
-.\scripts\pull-logs.ps1 -Host 10.216.4.59 -User logpull -UseSudo
+.\scripts\pull-logs.ps1 -RemoteHost 10.216.4.59 -User logpull -UseSudo
 ```
 
 The script downloads a compressed archive into `data\archives`, extracts it into

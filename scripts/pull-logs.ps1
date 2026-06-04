@@ -1,5 +1,5 @@
 param(
-  [string]$Host = "10.216.4.59",
+  [string]$RemoteHost = "10.216.4.59",
   [string]$User = "logpull",
   [string]$IdentityFile = "",
   [switch]$UseSudo
@@ -17,7 +17,7 @@ New-Item -ItemType Directory -Force -Path $ArchiveDir, $ExtractDir, $DashboardDa
 
 $Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $RemoteArchive = "/tmp/logpull-var-log-$Stamp.tgz"
-$LocalArchive = Join-Path $ArchiveDir "var-log-$Host-$Stamp.tgz"
+$LocalArchive = Join-Path $ArchiveDir "var-log-$RemoteHost-$Stamp.tgz"
 
 $sshArgs = @("-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15")
 $scpArgs = @("-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15")
@@ -27,7 +27,7 @@ if ($IdentityFile) {
   $scpArgs += @("-i", $IdentityFile)
 }
 
-$Target = "$User@$Host"
+$Target = "$User@$RemoteHost"
 $tarPrefix = ""
 if ($UseSudo) {
   $tarPrefix = "sudo -n "
@@ -62,10 +62,9 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Parsing logs for dashboard..."
-python (Join-Path $Root "scripts\parse-logs.py") --logs-root $LatestDir --output (Join-Path $DashboardData "logs.json") --host $Host --archive $LocalArchive
+python (Join-Path $Root "scripts\parse-logs.py") --logs-root $LatestDir --output (Join-Path $DashboardData "logs.json") --host $RemoteHost --archive $LocalArchive
 if ($LASTEXITCODE -ne 0) {
   throw "Parsing failed."
 }
 
 Write-Host "Done. Run .\scripts\serve.ps1 and open http://localhost:8080"
-
