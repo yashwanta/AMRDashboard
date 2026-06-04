@@ -76,3 +76,24 @@ sudo ufw status
 ```
 
 Open <http://10.216.4.59:8885> and sign in with the configured username and password.
+
+## Pull RDS Web Data
+
+The dashboard can also pull live AMR data from the RDS web UI at
+`http://10.216.4.59:8080/#/view`.
+
+```powershell
+.\scripts\pull-rds-data.ps1 -BaseUrl http://10.216.4.59:8080 -Username amrdashboard -Password "<password>"
+```
+
+On Ubuntu:
+
+```bash
+python3 scripts/pull-rds-data.py --base-url http://10.216.4.59:8080 --username amrdashboard --password "<password>" --output dashboard/data/rds.json
+```
+
+To refresh logs, RDS web data, and restart the web dashboard on Ubuntu:
+
+```bash
+RDS_PASSWORD='<password>' bash scripts/update-dashboard.sh
+```

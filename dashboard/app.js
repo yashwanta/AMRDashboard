@@ -7,6 +7,14 @@ const amrEventLabels = {
   mapUpdate: "Map Update",
 };
 const amrEventOrder = ["dataConnection", "connectionLoss", "mapUpdate"];
+const statusColor = {
+  online: "#0f766e",
+  idle: "#2563eb",
+  running: "#7c3aed",
+  charging: "#b7791f",
+  offline: "#64748b",
+  undispatchable: "#c2410c",
+};
 
 function byId(id) {
   return document.getElementById(id);
@@ -78,6 +86,46 @@ function renderRank(id, items, emptyText) {
     row.className = "rank-item";
     row.innerHTML = `<span class="rank-name" title="${item.name}">${item.name}</span><span class="rank-count">${fmt.format(item.count)}</span>`;
     container.appendChild(row);
+  });
+}
+
+function renderRdsStatus(counts) {
+  const container = byId("rdsStatusBars");
+  container.innerHTML = "";
+  const entries = Object.entries(counts || {}).sort((a, b) => b[1] - a[1]);
+  const total = entries.reduce((sum, item) => sum + item[1], 0);
+  if (!entries.length) {
+    container.innerHTML = '<p class="empty">No RDS live robot data pulled yet.</p>';
+    return;
+  }
+  entries.forEach(([name, value]) => {
+    const pct = total ? Math.round((value / total) * 100) : 0;
+    const row = document.createElement("div");
+    row.className = "bar-row";
+    row.innerHTML = `
+      <span>${escapeHtml(name)}</span>
+      <div class="track"><div class="fill" style="width:${pct}%;background:${statusColor[name] || "#64748b"}"></div></div>
+      <strong>${fmt.format(value)}</strong>
+    `;
+    container.appendChild(row);
+  });
+}
+
+function renderRdsRobots(robots) {
+  const body = byId("rdsRobotsTable");
+  body.innerHTML = "";
+  if (!robots || !robots.length) {
+    body.innerHTML = '<tr><td colspan="3" class="empty">No RDS robots found.</td></tr>';
+    return;
+  }
+  robots.forEach((robot) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${escapeHtml(robot.uuid || "unknown")}</td>
+      <td><span class="status-pill" style="background:${statusColor[robot.status] || "#64748b"}">${escapeHtml(robot.status || "unknown")}</span></td>
+      <td>${escapeHtml(robot.statusCode ?? "")}</td>
+    `;
+    body.appendChild(row);
   });
 }
 
@@ -234,6 +282,9 @@ function renderTimeline(items) {
 async function init() {
   const response = await fetch("data/logs.json", { cache: "no-store" });
   const data = await response.json();
+  const rds = await fetch("data/rds.json", { cache: "no-store" })
+    .then((res) => res.ok ? res.json() : null)
+    .catch(() => null);
   const amr = data.amr || {};
   const amrCounts = amr.counts || {};
 
@@ -250,6 +301,8 @@ async function init() {
   renderAmrTable("amrTable", amr.robots || [], "amr", "No AMR IDs found in the matched events.");
   renderAmrTable("amrFilesTable", amr.files || [], "file", "No AMR event files found.");
   renderAmrEvents(amr.recent || []);
+  renderRdsStatus(rds?.statusCounts || {});
+  renderRdsRobots(rds?.robots || []);
   renderBars(data.severities || {});
   renderRank("serviceList", data.services || [], "No service activity parsed yet.");
   renderFiles(data.topFiles || []);

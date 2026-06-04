@@ -276,6 +276,18 @@ th:not(:first-child) {
   font-size: 12px;
 }
 
+.status-pill {
+  display: inline-block;
+  min-width: 76px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+}
+
 .empty {
   padding: 18px;
   color: var(--muted);

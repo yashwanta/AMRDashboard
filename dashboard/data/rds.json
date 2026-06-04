@@ -1,0 +1,15 @@
+{
+  "sourceUrl": "http://10.216.4.59:8080",
+  "viewUrl": "http://10.216.4.59:8080/#/view",
+  "robots": [],
+  "statusCounts": {},
+  "robotUuids": [],
+  "battery": null,
+  "orders": null,
+  "errors": {
+    "statusCurrent": "",
+    "uuids": "",
+    "battery": "",
+    "orders": ""
+  }
+}
