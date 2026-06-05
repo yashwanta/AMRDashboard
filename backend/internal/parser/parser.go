@@ -103,6 +103,14 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 		return nil
 	}
 
+	// Skip known harmless high-volume noise
+	if strings.Contains(line, "Failed to make thread") && strings.Contains(line, "realtime scheduled") {
+		return nil
+	}
+	if strings.Contains(line, "RealtimeKit1") {
+		return nil
+	}
+
 	ts := extractTimestamp(line)
 
 	for _, r := range rules {

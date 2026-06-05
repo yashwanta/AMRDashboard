@@ -185,6 +185,8 @@ func (h *SyncHandler) runSync(ctx context.Context, serverID int) (int, error) {
 			OR message LIKE '%=free=%'
 			OR message LIKE '%=services_failed=%'
 			OR message LIKE '%=coredumps=%'
+			OR (message LIKE '%Failed to make thread%' AND message LIKE '%realtime scheduled%')
+			OR message LIKE '%RealtimeKit1%'
 		  )`, serverID)
 	if cleanErr != nil {
 		log.Printf("cleanup server %d system_info noise: %v", serverID, cleanErr)
