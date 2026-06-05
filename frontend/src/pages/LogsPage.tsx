@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { getLogs, getServers } from '../api/client'
 import LogsTable from '../components/logs/LogsTable'
 import Header from '../components/layout/Header'
