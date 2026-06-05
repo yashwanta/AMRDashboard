@@ -168,6 +168,28 @@ func (h *SyncHandler) runSync(ctx context.Context, serverID int) (int, error) {
 	}
 
 	now := time.Now()
+
+	// Auto-clean: remove boot-history entries that were incorrectly parsed as restart events.
+	// These come from `last reboot` output in system_info — real timestamps are wrong (sync time, not boot time).
+	_, cleanErr := h.db.Exec(ctx, `
+		DELETE FROM log_events
+		WHERE server_id=$1
+		  AND source='system_info'
+		  AND event_type='power_off'
+		  AND (
+			  message LIKE '%system boot%'
+			OR message = '=last_reboot='
+			OR message LIKE 'reboot %'
+			OR message LIKE '%=uptime=%'
+			OR message LIKE '%=df=%'
+			OR message LIKE '%=free=%'
+			OR message LIKE '%=services_failed=%'
+			OR message LIKE '%=coredumps=%'
+		  )`, serverID)
+	if cleanErr != nil {
+		log.Printf("cleanup server %d system_info noise: %v", serverID, cleanErr)
+	}
+
 	h.db.Exec(ctx, `UPDATE servers SET last_sync_at=$1 WHERE id=$2`, now, serverID)
 	h.finishJob(ctx, jobID, total, "")
 	return jobID, nil

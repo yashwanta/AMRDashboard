@@ -37,6 +37,7 @@ func NewRouter(db *pgxpool.Pool, encryptionKey string) http.Handler {
 		r.Get("/stats", logH.Stats)
 		r.Get("/timeline", logH.Timeline)
 		r.Get("/sync-history", logH.SyncHistory)
+		r.Get("/server-stats", logH.ServerStats)
 	})
 
 	corsH := cors.New(cors.Options{

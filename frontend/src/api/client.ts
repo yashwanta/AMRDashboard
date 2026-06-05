@@ -37,3 +37,5 @@ export const getLogs = (filters: LogFilters = {}) => {
 export const getStats = () => api.get<DashboardStats>('/stats').then(r => r.data)
 export const getTimeline = () => api.get<TimelinePoint[]>('/timeline').then(r => r.data)
 export const getSyncHistory = () => api.get<SyncJob[]>('/sync-history').then(r => r.data)
+
+export const getServerStats = () => api.get('/server-stats').then(r => r.data)

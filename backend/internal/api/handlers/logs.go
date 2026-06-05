@@ -163,3 +163,51 @@ func (h *LogHandler) SyncHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	jsonOK(w, jobs)
 }
+
+// ServerStats returns per-server event breakdowns for the dashboard.
+func (h *LogHandler) ServerStats(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.db.Query(r.Context(), `
+		SELECT
+			s.id,
+			s.name,
+			s.status,
+			COALESCE(SUM(CASE WHEN le.event_type='robot_offline' THEN 1 END),0) AS robot_offline,
+			COALESCE(SUM(CASE WHEN le.event_type='robot_online'  THEN 1 END),0) AS robot_online,
+			COALESCE(SUM(CASE WHEN le.event_type='crash'         THEN 1 END),0) AS crashes,
+			COALESCE(SUM(CASE WHEN le.event_type='disk_error'    THEN 1 END),0) AS disk_errors,
+			COALESCE(SUM(CASE WHEN le.event_type='error'         THEN 1 END),0) AS errors,
+			COALESCE(SUM(CASE WHEN le.severity IN ('critical','high') THEN 1 END),0) AS critical
+		FROM servers s
+		LEFT JOIN log_events le ON le.server_id = s.id
+		GROUP BY s.id, s.name, s.status
+		ORDER BY s.name`)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type ServerStat struct {
+		ID          int    `json:"id"`
+		Name        string `json:"name"`
+		Status      string `json:"status"`
+		RobotOffline int   `json:"robot_offline"`
+		RobotOnline  int   `json:"robot_online"`
+		Crashes      int   `json:"crashes"`
+		DiskErrors   int   `json:"disk_errors"`
+		Errors       int   `json:"errors"`
+		Critical     int   `json:"critical"`
+	}
+
+	var results []ServerStat
+	for rows.Next() {
+		var s ServerStat
+		rows.Scan(&s.ID, &s.Name, &s.Status, &s.RobotOffline, &s.RobotOnline,
+			&s.Crashes, &s.DiskErrors, &s.Errors, &s.Critical)
+		results = append(results, s)
+	}
+	if results == nil {
+		results = []ServerStat{}
+	}
+	jsonOK(w, results)
+}

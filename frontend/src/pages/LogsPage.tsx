@@ -38,8 +38,21 @@ const QUICK_FILTERS: { label: string; keyword: string }[] = [
 ]
 
 export default function LogsPage() {
-  const [filters, setFilters] = useState<LogFilters>({ limit: 200 })
+  const [searchParams] = useSearchParams()
+  const [filters, setFilters] = useState<LogFilters>(() => ({
+    limit: 200,
+    event_type: searchParams.get('event_type') ?? undefined,
+    server_id: searchParams.get('server_id') ? Number(searchParams.get('server_id')) : undefined,
+  }))
   const [keyword, setKeyword] = useState('')
+
+  useEffect(() => {
+    const et = searchParams.get('event_type')
+    const sid = searchParams.get('server_id')
+    if (et || sid) {
+      setFilters(f => ({ ...f, event_type: et ?? undefined, server_id: sid ? Number(sid) : undefined }))
+    }
+  }, [searchParams.toString()])
 
   const { data: servers = [] } = useQuery({ queryKey: ['servers'], queryFn: getServers })
   const { data: events = [], isLoading } = useQuery({

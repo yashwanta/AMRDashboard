@@ -4,8 +4,8 @@ import { clsx } from 'clsx'
 
 const nav = [
   { to: '/',         label: 'Dashboard',  Icon: LayoutDashboard },
-  { to: '/servers',  label: 'Servers',    Icon: Server },
   { to: '/logs',     label: 'Logs',       Icon: FileText },
+  { to: '/servers',  label: 'Servers',    Icon: Server },
   { to: '/sync',     label: 'Sync Jobs',  Icon: RefreshCw },
 ]
 
