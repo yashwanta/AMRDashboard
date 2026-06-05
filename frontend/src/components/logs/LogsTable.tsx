@@ -10,7 +10,11 @@ interface Props {
 }
 
 const typeConfig: Record<string, { icon: string; label: string; rowBg: string; badgeCls: string }> = {
-  crash:     { icon: '💥', label: 'App Crash',   rowBg: 'bg-red-50/40',    badgeCls: 'bg-red-100 text-red-700 border border-red-200' },
+  crash:         { icon: '💥', label: 'App Crash',       rowBg: 'bg-red-50/40',    badgeCls: 'bg-red-100 text-red-700 border border-red-200' },
+  robot_offline: { icon: '🤖', label: 'Robot Offline',   rowBg: 'bg-red-50/20',    badgeCls: 'bg-red-100 text-red-700 border border-red-200' },
+  robot_online:  { icon: '🤖', label: 'Robot Online',    rowBg: 'bg-green-50/20',  badgeCls: 'bg-green-100 text-green-700 border border-green-200' },
+  disk_error:    { icon: '💾', label: 'Disk Error',       rowBg: 'bg-yellow-50/30', badgeCls: 'bg-yellow-100 text-yellow-700 border border-yellow-200' },
+  update:        { icon: '🔄', label: 'Update Available', rowBg: '',                badgeCls: 'bg-blue-50 text-blue-600 border border-blue-200' },
   power_off: { icon: '⚡', label: 'Restart',      rowBg: 'bg-orange-50/40', badgeCls: 'bg-orange-100 text-orange-700 border border-orange-200' },
   error:     { icon: '❌', label: 'System Error', rowBg: 'bg-yellow-50/30', badgeCls: 'bg-yellow-100 text-yellow-700 border border-yellow-200' },
   warning:   { icon: '⚠️', label: 'Warning',      rowBg: '',                badgeCls: 'bg-purple-100 text-purple-700 border border-purple-200' },

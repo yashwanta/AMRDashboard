@@ -112,7 +112,7 @@ export default function LogsPage() {
         </div>
 
         {/* Table */}
-        <LogsTable events={filtered} isLoading={isLoading} />
+        <LogsTable events={filtered} loading={isLoading} />
       </div>
     </div>
   )
