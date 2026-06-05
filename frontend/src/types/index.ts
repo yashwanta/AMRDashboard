@@ -25,8 +25,8 @@ export interface LogEvent {
   server_id: number
   server_name: string
   timestamp: string
-  event_type: 'crash' | 'power_off' | 'error' | 'warning' | 'info'
-  severity: 'critical' | 'high' | 'medium' | 'low'
+  event_type: 'crash' | 'power_off' | 'error' | 'warning' | 'info' | 'robot_offline' | 'robot_online' | 'disk_error' | 'update'
+  severity: 'critical' | 'high' | 'medium' | 'low' | 'info'
   message: string
   source: string
   created_at: string
@@ -40,6 +40,9 @@ export interface DashboardStats {
   crash_count: number
   power_off_count: number
   error_count: number
+  robot_offline_count: number
+  robot_online_count: number
+  disk_error_count: number
 }
 
 export interface TimelinePoint {

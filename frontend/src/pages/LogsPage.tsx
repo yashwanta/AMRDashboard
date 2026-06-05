@@ -6,12 +6,16 @@ import Header from '../components/layout/Header'
 import type { LogFilters } from '../api/client'
 
 const EVENT_TYPES: { value: string; label: string }[] = [
-  { value: '',          label: 'All Types' },
-  { value: 'crash',     label: '💥 App Crash' },
-  { value: 'power_off', label: '⚡ Restart / Shutdown' },
-  { value: 'error',     label: '❌ System Error' },
-  { value: 'warning',   label: '⚠️ Warning' },
-  { value: 'info',      label: 'ℹ️ Info' },
+  { value: '',              label: 'All Types' },
+  { value: 'crash',        label: '💥 App Crash' },
+  { value: 'power_off',    label: '⚡ Restart / Shutdown' },
+  { value: 'robot_offline',label: '🤖🔴 Robot Offline / Disconnect' },
+  { value: 'robot_online', label: '🤖🟢 Robot Online / Connected' },
+  { value: 'disk_error',   label: '💾 Disk Error' },
+  { value: 'error',        label: '❌ System Error' },
+  { value: 'warning',      label: '⚠️ Warning' },
+  { value: 'update',       label: '🔄 Update Available' },
+  { value: 'info',         label: 'ℹ️ Info' },
 ]
 
 const SEVERITIES: { value: string; label: string }[] = [
@@ -22,19 +26,20 @@ const SEVERITIES: { value: string; label: string }[] = [
   { value: 'low',      label: '⚪ Low — No action needed' },
 ]
 
-// Quick keyword filters non-technical users care about
 const QUICK_FILTERS: { label: string; keyword: string }[] = [
-  { label: '💾 Out of Memory', keyword: 'out of memory' },
-  { label: '💥 Segfault',      keyword: 'segfault' },
-  { label: '🔌 Disk Error',    keyword: 'i/o error' },
-  { label: '🛑 Kernel Panic',  keyword: 'kernel panic' },
-  { label: '🔒 Login / SSH',   keyword: 'sshd' },
-  { label: '⚙️ Service Fail',  keyword: 'failed to start' },
+  { label: '🤖 Disconnect',      keyword: 'UnconnectedState' },
+  { label: '🔌 Connect timeout', keyword: 'Connect timeout' },
+  { label: '📡 Remote closed',   keyword: 'remote host closed' },
+  { label: '💾 Out of Memory',   keyword: 'out of memory' },
+  { label: '💥 Segfault',        keyword: 'segfault' },
+  { label: '🛑 Kernel Panic',    keyword: 'kernel panic' },
+  { label: '⚙️ Service Fail',    keyword: 'failed to start' },
+  { label: '🔒 SSH Login',       keyword: 'sshd' },
 ]
 
 export default function LogsPage() {
-  const [filters, setFilters]   = useState<LogFilters>({ limit: 200 })
-  const [keyword, setKeyword]   = useState('')
+  const [filters, setFilters] = useState<LogFilters>({ limit: 200 })
+  const [keyword, setKeyword] = useState('')
 
   const { data: servers = [] } = useQuery({ queryKey: ['servers'], queryFn: getServers })
   const { data: events = [], isLoading } = useQuery({
@@ -46,7 +51,6 @@ export default function LogsPage() {
   const set = (k: keyof LogFilters, v: string | number | undefined) =>
     setFilters(f => ({ ...f, [k]: v || undefined }))
 
-  // Client-side keyword filter
   const filtered = useMemo(() => {
     if (!keyword.trim()) return events
     const kw = keyword.toLowerCase()
@@ -69,80 +73,46 @@ export default function LogsPage() {
               <option value="">All Servers</option>
               {servers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
-
             <select className="input-sm" value={filters.event_type ?? ''} onChange={e => set('event_type', e.target.value)}>
               {EVENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
-
             <select className="input-sm" value={filters.severity ?? ''} onChange={e => set('severity', e.target.value)}>
               {SEVERITIES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
-
             <input
-              className="input-sm"
-              type="datetime-local"
-              onChange={e => set('from', e.target.value ? new Date(e.target.value).toISOString() : undefined)}
-              title="From date"
-            />
-            <input
-              className="input-sm"
-              type="datetime-local"
-              onChange={e => set('to', e.target.value ? new Date(e.target.value).toISOString() : undefined)}
-              title="To date"
-            />
-
-            <select className="input-sm" value={filters.limit ?? 200} onChange={e => set('limit', Number(e.target.value))}>
-              <option value={50}>50 rows</option>
-              <option value={200}>200 rows</option>
-              <option value={500}>500 rows</option>
-              <option value={1000}>1000 rows</option>
-            </select>
-
-            <button className="btn-ghost text-sm" onClick={() => { setFilters({ limit: 200 }); setKeyword('') }}>
-              Reset
-            </button>
-          </div>
-
-          {/* Keyword search */}
-          <div className="flex items-center gap-2">
-            <input
-              className="input-sm flex-1 max-w-xs"
-              placeholder="Search messages…"
+              type="text"
+              placeholder="Search message..."
+              className="input-sm flex-1 min-w-48"
               value={keyword}
               onChange={e => setKeyword(e.target.value)}
             />
-            {keyword && (
-              <button className="text-xs text-gray-400 hover:text-gray-600" onClick={() => setKeyword('')}>✕ Clear</button>
-            )}
           </div>
-
-          {/* Quick-pick filters */}
+          {/* Quick filters */}
           <div className="flex flex-wrap gap-2">
-            <span className="text-xs text-gray-400 self-center">Quick filter:</span>
-            {QUICK_FILTERS.map(q => (
+            <span className="text-xs text-gray-400 self-center mr-1">Quick:</span>
+            {QUICK_FILTERS.map(f => (
               <button
-                key={q.keyword}
-                onClick={() => applyQuick(q.keyword)}
+                key={f.keyword}
+                onClick={() => applyQuick(f.keyword)}
                 className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                  keyword === q.keyword
-                    ? 'bg-gray-800 text-white border-gray-800'
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                  keyword === f.keyword
+                    ? 'bg-indigo-100 border-indigo-300 text-indigo-700 font-medium'
+                    : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
                 }`}
               >
-                {q.label}
+                {f.label}
               </button>
             ))}
           </div>
         </div>
 
-        <div className="text-sm text-gray-500">
-          {filtered.length} event{filtered.length !== 1 ? 's' : ''}
-          {keyword && <span className="ml-1 text-blue-600">matching "{keyword}"</span>}
+        {/* Results count */}
+        <div className="text-xs text-gray-400 px-1">
+          {isLoading ? 'Loading...' : `${filtered.length} events`}
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-          <LogsTable events={filtered} loading={isLoading} />
-        </div>
+        {/* Table */}
+        <LogsTable events={filtered} isLoading={isLoading} />
       </div>
     </div>
   )

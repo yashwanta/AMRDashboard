@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Server, AlertTriangle, Zap, Activity, TrendingUp, Wifi, RefreshCw } from 'lucide-react'
+import { Server, AlertTriangle, Zap, Activity, TrendingUp, Wifi, RefreshCw, HardDrive } from 'lucide-react'
 import { getStats, getTimeline, getLogs } from '../api/client'
 import StatsCard from '../components/dashboard/StatsCard'
 import EventChart from '../components/dashboard/EventChart'
@@ -24,7 +24,7 @@ export default function DashboardPage() {
       <div className="flex flex-col h-full">
         <Header title="Dashboard" />
         <div className="flex-1 flex items-center justify-center text-gray-400">
-          <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Loading dashboard…
+          <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Loading dashboard...
         </div>
       </div>
     )
@@ -57,12 +57,37 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Stats grid */}
+        {/* Server health row */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatsCard label="Total Servers"   value={stats?.total_servers ?? 0}   Icon={Server}        color="blue"   sub={`${stats?.online_servers ?? 0} online`} />
-          <StatsCard label="Crashes"         value={stats?.crash_count ?? 0}     Icon={AlertTriangle} color="red"    sub="all time" />
-          <StatsCard label="Power Offs"      value={stats?.power_off_count ?? 0} Icon={Zap}           color="orange" sub="all time" />
-          <StatsCard label="Total Events"    value={stats?.total_events ?? 0}    Icon={Activity}      color="purple" sub={`${stats?.critical_events ?? 0} critical`} />
+          <StatsCard label="Total Servers"  value={stats?.total_servers ?? 0}  Icon={Server}        color="blue"   sub={`${stats?.online_servers ?? 0} online`} />
+          <StatsCard label="Crashes"        value={stats?.crash_count ?? 0}    Icon={AlertTriangle} color="red"    sub="all time" />
+          <StatsCard label="Power Offs"     value={stats?.power_off_count ?? 0} Icon={Zap}          color="orange" sub="all time" />
+          <StatsCard label="Total Events"   value={stats?.total_events ?? 0}   Icon={Activity}      color="purple" sub={`${stats?.critical_events ?? 0} critical`} />
+        </div>
+
+        {/* AMR robot row */}
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex items-center gap-4">
+            <span className="text-3xl">🤖🔴</span>
+            <div>
+              <div className="text-2xl font-bold text-red-600">{stats?.robot_offline_count ?? 0}</div>
+              <div className="text-xs text-gray-500 mt-0.5">Robot Disconnects</div>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex items-center gap-4">
+            <span className="text-3xl">🤖🟢</span>
+            <div>
+              <div className="text-2xl font-bold text-green-600">{stats?.robot_online_count ?? 0}</div>
+              <div className="text-xs text-gray-500 mt-0.5">Robot Connections</div>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex items-center gap-4">
+            <HardDrive className="w-8 h-8 text-yellow-500 shrink-0" />
+            <div>
+              <div className="text-2xl font-bold text-yellow-600">{stats?.disk_error_count ?? 0}</div>
+              <div className="text-xs text-gray-500 mt-0.5">Disk Errors</div>
+            </div>
+          </div>
         </div>
 
         {/* Online vs offline pills */}

@@ -78,8 +78,7 @@ func (h *LogHandler) List(w http.ResponseWriter, r *http.Request) {
 		var e models.LogEvent
 		if err := rows.Scan(&e.ID, &e.ServerID, &e.ServerName, &e.Timestamp,
 			&e.EventType, &e.Severity, &e.Message, &e.Source, &e.CreatedAt); err != nil {
-			jsonError(w, err.Error(), http.StatusInternalServerError)
-			return
+			continue
 		}
 		events = append(events, e)
 	}
@@ -100,6 +99,9 @@ func (h *LogHandler) Stats(w http.ResponseWriter, r *http.Request) {
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='crash'`).Scan(&stats.CrashCount)
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='power_off'`).Scan(&stats.PowerOffCount)
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='error'`).Scan(&stats.ErrorCount)
+	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='robot_offline'`).Scan(&stats.RobotOfflineCount)
+	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='robot_online'`).Scan(&stats.RobotOnlineCount)
+	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='disk_error'`).Scan(&stats.DiskErrorCount)
 
 	jsonOK(w, stats)
 }
@@ -152,7 +154,8 @@ func (h *LogHandler) SyncHistory(w http.ResponseWriter, r *http.Request) {
 	var jobs []models.SyncJob
 	for rows.Next() {
 		var j models.SyncJob
-		rows.Scan(&j.ID, &j.ServerID, &j.ServerName, &j.StartedAt, &j.FinishedAt, &j.Status, &j.EventCount, &j.Error)
+		rows.Scan(&j.ID, &j.ServerID, &j.ServerName, &j.StartedAt,
+			&j.FinishedAt, &j.Status, &j.EventCount, &j.Error)
 		jobs = append(jobs, j)
 	}
 	if jobs == nil {
