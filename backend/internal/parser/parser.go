@@ -26,9 +26,9 @@ var rules = []rule{
 	{[]string{"watchdog: BUG: soft lockup"}, "crash", "critical"},
 	{[]string{"core dumped", "Aborted (core"}, "crash", "high"},
 
-	// Power off / reboot
-	{[]string{"Power Down", "System is going down", "shutdown", "Shutdown"}, "power_off", "high"},
-	{[]string{"reboot", "Rebooting"}, "power_off", "medium"},
+	// Power off / reboot (journald only — not system_info history)
+	{[]string{"Power Down", "System is going down"}, "power_off", "high"},
+	{[]string{"Rebooting"}, "power_off", "medium"},
 	{[]string{"ACPI: Preparing to enter system sleep"}, "power_off", "medium"},
 	{[]string{"systemd-logind: System is rebooting"}, "power_off", "high"},
 
@@ -80,15 +80,37 @@ var rules = []rule{
 	{[]string{"critical", "CRITICAL"}, "error", "high"},
 }
 
+// skipSources lists log sources whose output should not trigger reboot/shutdown events,
+// because they contain historical command output (e.g. "last reboot") rather than live events.
+var rebootSkipSources = map[string]bool{
+	"system_info": true,
+	"syslog":      true,
+	"kern.log":    true,
+	"auth.log":    true,
+	"messages":    true,
+}
+
 // ParseLine analyses a single log line and returns a LogEvent if it matches.
 func ParseLine(line, source string, serverID int) *models.LogEvent {
 	if strings.TrimSpace(line) == "" {
 		return nil
 	}
 
+	// Skip lines that look like "last reboot" history entries:
+	// e.g. "reboot   system boot  6.8.0-110  Wed Apr 29 10:49 - 15:16 (20+04:27)"
+	if strings.HasPrefix(strings.TrimSpace(line), "reboot") &&
+		strings.Contains(line, "system boot") {
+		return nil
+	}
+
 	ts := extractTimestamp(line)
 
 	for _, r := range rules {
+		// Don't fire reboot/shutdown rules from historical command output sources
+		if r.eventType == "power_off" && rebootSkipSources[source] {
+			continue
+		}
+
 		for _, kw := range r.keywords {
 			if strings.Contains(line, kw) {
 				msg := strings.TrimSpace(line)
