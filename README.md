@@ -1,99 +1,110 @@
-# AMRDashboard
+# AMR Dashboard
 
-Pulling logs and creating dashboard for visibility.
+Self-hosted Linux server log monitoring dashboard — new Go + React stack.  
+Pulls logs over SSH on demand or automatically at **6 AM and 6 PM**, then visualises crashes, power-offs, and errors.
 
-Self-contained dashboard for logs pulled from `logpull@10.216.4.59`.
+> The original scripts (`scripts/`, `dashboard/`) are preserved for reference.
 
-## Pull Logs
+## Stack
 
-Run this from PowerShell after SSH auth is configured for `logpull`:
+| Layer      | Technology                     |
+|------------|-------------------------------|
+| Backend    | Go 1.22                        |
+| HTTP       | chi v5                         |
+| Database   | PostgreSQL 16 + pgx v5         |
+| Scheduler  | robfig/cron                    |
+| Frontend   | React 18 + TypeScript + Vite   |
+| Styling    | Tailwind CSS                   |
+| Charts     | Recharts                       |
 
-```powershell
-.\scripts\pull-logs.ps1 -RemoteHost 10.216.4.59 -User logpull
-```
+---
 
-If the account needs a key:
-
-```powershell
-.\scripts\pull-logs.ps1 -RemoteHost 10.216.4.59 -User logpull -IdentityFile C:\path\to\key
-```
-
-If `logpull` has passwordless sudo for `tar`, add `-UseSudo` to capture privileged logs:
-
-```powershell
-.\scripts\pull-logs.ps1 -RemoteHost 10.216.4.59 -User logpull -UseSudo
-```
-
-The script downloads a compressed archive into `data\archives`, extracts it into
-`data\logs\latest`, and writes dashboard data to `dashboard\data\logs.json`.
-
-## View Dashboard
-
-```powershell
-.\scripts\serve.ps1
-```
-
-Then open <http://localhost:8080>.
-
-## View Dashboard With Login On Port 8885
-
-For local testing on this Windows machine:
-
-```powershell
-.\scripts\serve-login.ps1 -Port 8885 -User admin -Password "ChangeMe123!"
-```
-
-Then open <http://localhost:8885>.
-
-To make it available from the Ubuntu server as `http://10.216.4.59:8885`,
-copy this project to that server and run:
+## Quick Start (Docker)
 
 ```bash
-export AMR_DASH_USER=admin
-export AMR_DASH_PASSWORD='ChangeMe123!'
-python3 scripts/serve-login.py --host 0.0.0.0 --port 8885
+cp .env.example .env
+# Edit .env — set a real ENCRYPTION_KEY (32+ chars)
+
+docker compose up -d
 ```
 
-For a persistent Ubuntu service:
+- Frontend → http://localhost:3000  
+- Backend API → http://localhost:8080/api
+
+---
+
+## Development Setup
+
+### Prerequisites
+- Go 1.22+
+- Node 20+
+- PostgreSQL 16 running locally (or `docker compose up postgres -d`)
+
+### Backend
 
 ```bash
-cd /path/to/AMRDashboard
-sudo AMR_DASH_USER=admin AMR_DASH_PASSWORD='ChangeMe123!' bash scripts/install-ubuntu-service.sh
+cp backend/.env.example backend/.env
+# Edit DATABASE_URL and ENCRYPTION_KEY
+
+cd backend
+go mod download
+go run ./cmd/server
+# → listening on :8080
 ```
 
-Then check from another machine:
-
-```powershell
-Test-NetConnection 10.216.4.59 -Port 8885
-```
-
-If the browser says the connection was refused, check on Ubuntu:
+### Frontend
 
 ```bash
-sudo systemctl status amr-log-dashboard
-sudo ss -ltnp | grep ':8885'
-sudo ufw status
+cd frontend
+npm install
+npm run dev
+# → http://localhost:5173  (proxies /api/* → :8080)
 ```
 
-Open <http://10.216.4.59:8885> and sign in with the configured username and password.
+---
 
-## Pull RDS Web Data
+## Environment Variables
 
-The dashboard can also pull live AMR data from the RDS web UI at
-`http://10.216.4.59:8080/#/view`.
+| Variable         | Default                                           | Description                              |
+|------------------|---------------------------------------------------|------------------------------------------|
+| `DATABASE_URL`   | `postgres://amr:amr@localhost:5432/amrdashboard`  | PostgreSQL connection string             |
+| `SERVER_PORT`    | `8080`                                            | Backend HTTP port                        |
+| `ENCRYPTION_KEY` | *(required)*                                      | 32-byte AES key for SSH credential store |
+| `SCHEDULE_AM`    | `0 6 * * *`                                       | Morning auto-sync (6 AM)                 |
+| `SCHEDULE_PM`    | `0 18 * * *`                                      | Evening auto-sync (6 PM)                 |
 
-```powershell
-.\scripts\pull-rds-data.ps1 -BaseUrl http://10.216.4.59:8080 -Username amrdashboard -Password "<password>"
-```
+---
 
-On Ubuntu:
+## Features
 
-```bash
-python3 scripts/pull-rds-data.py --base-url http://10.216.4.59:8080 --username amrdashboard --password "<password>" --output dashboard/data/rds.json
-```
+- **Server management** — add/edit/delete servers with password or SSH key auth
+- **Test connection** — verify SSH credentials before saving
+- **On-demand sync** — trigger a log pull for any server from the UI
+- **Auto sync** — scheduled pulls at 6 AM and 6 PM (cron-configurable)
+- **Log parsing** — detects:
+  - 💥 **Crashes** (kernel panic, OOM killer, segfault, BUG, OOPS)
+  - ⚡ **Power-offs / reboots**
+  - ❌ **Service failures**, I/O errors, hardware (MCE/EDAC) errors
+  - ⚠️ **Warnings**
+- **Log sources** — journald, syslog, /var/log/messages, kern.log, auth.log
+- **Dashboard** — stats cards + 7-day area chart + recent events feed
+- **Logs page** — filterable table by server, type, severity, and date range
+- **Sync history** — every sync job with duration, event count, and error details
 
-To refresh logs, RDS web data, and restart the web dashboard on Ubuntu:
+---
 
-```bash
-RDS_PASSWORD='<password>' bash scripts/update-dashboard.sh
-```
+## API Reference
+
+| Method | Path                       | Description                    |
+|--------|----------------------------|--------------------------------|
+| GET    | `/api/servers`             | List all servers               |
+| POST   | `/api/servers`             | Add server                     |
+| PUT    | `/api/servers/:id`         | Update server                  |
+| DELETE | `/api/servers/:id`         | Delete server                  |
+| POST   | `/api/servers/:id/sync`    | Trigger sync for one server    |
+| POST   | `/api/sync/all`            | Sync all servers               |
+| POST   | `/api/sync/test`           | Test SSH connection            |
+| GET    | `/api/logs`                | Query log events (filterable)  |
+| GET    | `/api/stats`               | Dashboard stats                |
+| GET    | `/api/timeline`            | 7-day hourly event breakdown   |
+| GET    | `/api/sync-history`        | Last 50 sync jobs              |

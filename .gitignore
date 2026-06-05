@@ -1,7 +1,41 @@
+# ── Data ──────────────────────────────────────────────────────────────────────
 data/archives/
 data/logs/
 *.tgz
 *.tar.gz
+
+# ── Go ────────────────────────────────────────────────────────────────────────
+backend/server
+backend/*.exe
+backend/amr-backend.exe
+
+# ── Node / React ──────────────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# ── Python (legacy scripts) ───────────────────────────────────────────────────
 __pycache__/
 .pytest_cache/
+*.pyc
+*.pyo
 
+# ── Environment / secrets ─────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+backend/.env
+
+# ── Docker volumes ────────────────────────────────────────────────────────────
+pgdata/
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editors ───────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo

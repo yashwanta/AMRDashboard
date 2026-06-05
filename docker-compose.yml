@@ -1,0 +1,49 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: amr
+      POSTGRES_PASSWORD: amr
+      POSTGRES_DB: amrdashboard
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U amr -d amrdashboard"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://amr:amr@postgres:5432/amrdashboard?sslmode=disable
+      SERVER_PORT: 8080
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-change-this-32-byte-secret-key!!}
+      SCHEDULE_AM: "0 6 * * *"
+      SCHEDULE_PM: "0 18 * * *"
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  pgdata:
