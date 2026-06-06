@@ -104,7 +104,7 @@ function parseRawLog(raw: string): ParsedLog | null {
   return null
 }
 function stripAnsi(s: string): string {
-  return s.replace(/#033\[[0-9;]*m/g, '').replace(/\x1b\[[0-9;]*m/g, '').replace(/\033\[[0-9;]*m/g, '')
+  return s.replace(/#033\[[0-9;]*m/g, '').replace(/\[[0-9;]*m/g, '')
 }
 function cleanMessage(raw: string): string {
   const p = parseRawLog(raw); return stripAnsi(p ? p.body : raw.trim())
