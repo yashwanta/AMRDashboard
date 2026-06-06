@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go mod *)",
+      "Bash(GONOSUMCHECK=* GOFLAGS=\"-mod=mod\" go get github.com/jackc/pgservicefile@latest)",
+      "Bash(GONOSUMCHECK=* go get github.com/jackc/pgx/v5@v5.5.5)",
+      "Bash(go env *)",
+      "Bash(GOPROXY=direct go mod tidy)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(go build *)",
+      "Bash(mkdir -p /c/AMRDashboard/.claude)",
+      "Bash(docker --version)",
+      "Bash(docker compose *)",
+      "Bash(pg_isready)",
+      "PowerShell(docker --version 2>&1)",
+      "PowerShell(docker compose version 2>&1)",
+      "PowerShell(podman ps *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\AMRDashboard\\\\frontend\\\\src\" -Filter \"*.ts\" -File -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object -ExpandProperty Name)",
+      "Skill(update-config)",
+      "PowerShell(Get-Content *)",
+      "PowerShell(podman inspect *)",
+      "PowerShell(podman images *)",
+      "PowerShell($r = Invoke-WebRequest -Uri http://localhost:3000 -UseBasicParsing; $r.StatusCode; $r.Content.Substring\\(0,200\\))",
+      "PowerShell($r = Invoke-WebRequest -Uri http://localhost:3000/api/stats -UseBasicParsing; $r.StatusCode; $r.Content)"
+    ]
+  }
+}

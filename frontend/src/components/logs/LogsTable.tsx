@@ -103,8 +103,11 @@ function parseRawLog(raw: string): ParsedLog | null {
   if (syslog) return { ts: syslog[1], host: syslog[2], process: syslog[3], body: syslog[4].trim() }
   return null
 }
+function stripAnsi(s: string): string {
+  return s.replace(/#033\[[0-9;]*m/g, '').replace(/\x1b\[[0-9;]*m/g, '').replace(/\033\[[0-9;]*m/g, '')
+}
 function cleanMessage(raw: string): string {
-  const p = parseRawLog(raw); return p ? p.body : raw.trim()
+  const p = parseRawLog(raw); return stripAnsi(p ? p.body : raw.trim())
 }
 
 // Parse "last reboot" output lines
@@ -196,7 +199,7 @@ export default function LogsTable({ events, loading }: Props) {
   if (!events.length) return <div className="text-center py-12 text-gray-400 text-sm">No events match the current filters.</div>
 
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto bg-gray-900 rounded-xl">
       <table className="w-full text-sm table-fixed text-gray-200">
         <colgroup>
           <col className="w-6" />
@@ -238,7 +241,7 @@ export default function LogsTable({ events, loading }: Props) {
               <tr
                 key={`row-${ev.id}`}
                 onClick={() => toggle(ev.id)}
-                className={clsx('cursor-pointer transition-colors', cfg.rowBg, !isOpen && 'border-b border-gray-700/40 hover:bg-gray-700/40')}
+                className={clsx('cursor-pointer transition-colors text-gray-200', cfg.rowBg, !isOpen && 'border-b border-gray-700/40 hover:bg-gray-700/40')}
               >
                 <td className="py-2.5 pl-1 pr-1 text-gray-400">
                   {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}

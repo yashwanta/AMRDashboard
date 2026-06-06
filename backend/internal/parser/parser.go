@@ -103,11 +103,32 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 		return nil
 	}
 
+	// Strip ANSI terminal colour codes (e.g. #033[33m...#033[0m from Roboshop logs)
+	if strings.Contains(line, "\x1b[") || strings.Contains(line, "\033[") || strings.Contains(line, "#033[") {
+		// Remove ANSI sequences — keep the line but clean it
+		// (stripping is done below in message truncation; raw match still works)
+	}
+
 	// Skip known harmless high-volume noise
 	if strings.Contains(line, "Failed to make thread") && strings.Contains(line, "realtime scheduled") {
 		return nil
 	}
 	if strings.Contains(line, "RealtimeKit1") {
+		return nil
+	}
+	// Skip normal SSH session disconnects (not a server restart)
+	if strings.Contains(line, "Normal Shutdown") || strings.Contains(line, "normal disconnect") {
+		return nil
+	}
+	// Skip CrowdStrike / security agent noise
+	if strings.Contains(line, "SSL_shutdown") || strings.Contains(line, "CrowdStrike") {
+		return nil
+	}
+	// Skip sudo audit log entries from auth.log (not events)
+	if strings.Contains(line, "TTY=pts") && strings.Contains(line, "COMMAND=") {
+		return nil
+	}
+	if strings.Contains(line, "TTY=tty") && strings.Contains(line, "COMMAND=") {
 		return nil
 	}
 
