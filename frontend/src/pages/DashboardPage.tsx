@@ -2,16 +2,14 @@ import { useState, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { getStats, getTimeline, getLogs, syncAll, getServerStats } from '../api/client'
-import { format, parseISO, isValid, formatDistanceToNow } from 'date-fns'
+import { format, parseISO, isValid } from 'date-fns'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts'
-import { Server, Wifi, RefreshCw, AlertTriangle, Activity, Radio, HardDrive, Bell, CheckCircle, Shield } from 'lucide-react'
+import { Server, RefreshCw, AlertTriangle, Activity, Radio, Bell, CheckCircle, Shield } from 'lucide-react'
 
 function safeTime(ts: string) {
   try { const d = parseISO(ts); return isValid(d) ? format(d, 'h:mm a') : '—' } catch { return '—' }
 }
-function safeRelative(ts: string) {
-  try { const d = parseISO(ts); return isValid(d) ? formatDistanceToNow(d, { addSuffix: true }) : '—' } catch { return '—' }
-}
+
 
 interface RdsInfo { serverIP?: string; serverPort?: string; tcpReason?: string; socketState?: string }
 function parseRds(msg: string): RdsInfo {
@@ -42,7 +40,6 @@ function disconnectAction(rds: RdsInfo): string {
 }
 
 const CARD_BG = 'bg-gray-800 border border-gray-700'
-const CARD_INNER = 'bg-gray-750'
 
 export default function DashboardPage() {
   const nav = useNavigate()
