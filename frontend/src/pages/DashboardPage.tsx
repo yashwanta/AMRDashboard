@@ -80,8 +80,8 @@ export default function DashboardPage() {
       {/* Top bar */}
       <div className="flex items-center justify-between px-6 py-4 bg-gray-900 border-b border-gray-700">
         <div>
-          <h1 className="text-base font-semibold text-white">AMR Dashboard</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Live server &amp; robot monitoring — {stats?.online_servers ?? 0} servers online</p>
+          <h1 className="text-base font-semibold text-white">RoboWatch</h1>
+          <p className="text-xs text-gray-400 mt-0.5">Fleet monitor —  — {stats?.online_servers ?? 0} servers online</p>
         </div>
         <button onClick={handleSync} disabled={syncing}
           className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white border border-gray-600 transition-colors disabled:opacity-50">
