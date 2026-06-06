@@ -176,6 +176,7 @@ func (h *LogHandler) ServerStats(w http.ResponseWriter, r *http.Request) {
 			COALESCE(SUM(CASE WHEN le.event_type='crash'         THEN 1 END),0) AS crashes,
 			COALESCE(SUM(CASE WHEN le.event_type='disk_error'    THEN 1 END),0) AS disk_errors,
 			COALESCE(SUM(CASE WHEN le.event_type='error'         THEN 1 END),0) AS errors,
+			COALESCE(SUM(CASE WHEN le.event_type='warning'       THEN 1 END),0) AS warnings,
 			COALESCE(SUM(CASE WHEN le.severity IN ('critical','high') THEN 1 END),0) AS critical
 		FROM servers s
 		LEFT JOIN log_events le ON le.server_id = s.id

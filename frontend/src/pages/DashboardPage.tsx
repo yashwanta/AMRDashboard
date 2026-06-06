@@ -186,18 +186,22 @@ export default function DashboardPage() {
                       <span className="text-sm font-medium text-gray-200 truncate">{s.name}</span>
                       <span className={`ml-auto text-xs px-2 py-0.5 rounded-full font-medium ${s.status === 'online' ? 'bg-green-900/50 text-green-400 border border-green-700' : 'bg-gray-700 text-gray-400'}`}>{s.status === 'online' ? 'Online' : 'Offline'}</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-4 gap-1.5">
                       <div className="text-center">
-                        <div className={`text-base font-semibold ${s.robot_offline > 0 ? 'text-red-400' : 'text-gray-500'}`}>{s.robot_offline}</div>
-                        <div className="text-xs text-gray-500">Disconnects</div>
+                        <div className={`text-sm font-bold ${s.robot_offline > 0 ? 'text-red-400' : 'text-gray-500'}`}>{s.robot_offline}</div>
+                        <div className="text-xs text-gray-500 leading-tight">🤖 Robot<br/>Offline</div>
                       </div>
                       <div className="text-center">
-                        <div className={`text-base font-semibold ${s.crashes > 0 ? 'text-amber-400' : 'text-gray-500'}`}>{s.crashes}</div>
-                        <div className="text-xs text-gray-500">Crashes</div>
+                        <div className={`text-sm font-bold ${s.errors > 0 ? 'text-orange-400' : 'text-gray-500'}`}>{s.errors}</div>
+                        <div className="text-xs text-gray-500 leading-tight">❌ System<br/>Errors</div>
                       </div>
                       <div className="text-center">
-                        <div className={`text-base font-semibold ${s.disk_errors > 0 ? 'text-yellow-400' : 'text-green-400'}`}>{s.disk_errors > 0 ? s.disk_errors : 'ok'}</div>
-                        <div className="text-xs text-gray-500">Disk</div>
+                        <div className={`text-sm font-bold ${s.crashes > 0 ? 'text-amber-400' : 'text-gray-500'}`}>{s.crashes}</div>
+                        <div className="text-xs text-gray-500 leading-tight">💥 App<br/>Crashes</div>
+                      </div>
+                      <div className="text-center">
+                        <div className={`text-sm font-bold ${s.disk_errors > 0 ? 'text-yellow-400' : 'text-green-400'}`}>{s.disk_errors > 0 ? s.disk_errors : 'ok'}</div>
+                        <div className="text-xs text-gray-500 leading-tight">💾 Disk<br/>Status</div>
                       </div>
                     </div>
                   </button>
