@@ -11,11 +11,11 @@ interface Props {
 
 // ─── Type config ─────────────────────────────────────────────────────────────
 const typeConfig: Record<string, { icon: string; label: string; rowBg: string; badgeCls: string }> = {
-  crash:         { icon: '💥', label: 'App Crash',        rowBg: 'bg-red-50/40',    badgeCls: 'bg-red-100 text-red-700 border border-red-200' },
-  power_off:     { icon: '⚡', label: 'Server Restart',   rowBg: 'bg-orange-50/40', badgeCls: 'bg-orange-100 text-orange-700 border border-orange-200' },
-  robot_offline: { icon: '🤖', label: 'Robot Offline',    rowBg: 'bg-red-50/20',    badgeCls: 'bg-red-100 text-red-700 border border-red-200' },
-  robot_online:  { icon: '📡', label: 'Robot Online',     rowBg: 'bg-green-50/20',  badgeCls: 'bg-green-100 text-green-700 border border-green-200' },
-  disk_error:    { icon: '💾', label: 'Disk Error',        rowBg: 'bg-yellow-50/30', badgeCls: 'bg-yellow-100 text-yellow-700 border border-yellow-200' },
+  crash:         { icon: '💥', label: 'App Crash',        rowBg: 'bg-red-900/20',    badgeCls: 'bg-red-100 text-red-700 border border-red-200' },
+  power_off:     { icon: '⚡', label: 'Server Restart',   rowBg: 'bg-orange-900/20', badgeCls: 'bg-orange-100 text-orange-700 border border-orange-200' },
+  robot_offline: { icon: '🤖', label: 'Robot Offline',    rowBg: 'bg-red-900/10',    badgeCls: 'bg-red-100 text-red-700 border border-red-200' },
+  robot_online:  { icon: '📡', label: 'Robot Online',     rowBg: 'bg-green-900/10',  badgeCls: 'bg-green-100 text-green-700 border border-green-200' },
+  disk_error:    { icon: '💾', label: 'Disk Error',        rowBg: 'bg-yellow-900/10', badgeCls: 'bg-yellow-100 text-yellow-700 border border-yellow-200' },
   update:        { icon: '🔄', label: 'Update Available', rowBg: '',                badgeCls: 'bg-blue-50 text-blue-600 border border-blue-200' },
   error:         { icon: '❌', label: 'System Error',      rowBg: 'bg-yellow-50/20', badgeCls: 'bg-yellow-100 text-yellow-700 border border-yellow-200' },
   warning:       { icon: '⚠️', label: 'Warning',           rowBg: '',                badgeCls: 'bg-purple-100 text-purple-700 border border-purple-200' },
@@ -192,12 +192,12 @@ export default function LogsTable({ events, loading }: Props) {
     setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
 
-  if (loading) return <div className="text-center py-12 text-gray-400">Loading events…</div>
-  if (!events.length) return <div className="text-center py-12 text-gray-400">No events match the current filters.</div>
+  if (loading) return <div className="text-center py-12 text-gray-500">Loading events…</div>
+  if (!events.length) return <div className="text-center py-12 text-gray-500">No events match the current filters.</div>
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm table-fixed">
+      <table className="w-full text-sm table-fixed text-gray-200">
         <colgroup>
           <col className="w-6" />
           <col className="w-28" />
@@ -207,7 +207,7 @@ export default function LogsTable({ events, loading }: Props) {
           <col />
         </colgroup>
         <thead>
-          <tr className="text-left text-xs text-gray-500 uppercase tracking-wide border-b border-gray-100">
+          <tr className="text-left text-xs text-gray-500 uppercase tracking-wide border-b border-gray-700">
             <th className="pb-3 font-medium" />
             <th className="pb-3 pr-4 font-medium">When</th>
             <th className="pb-3 pr-4 font-medium">Server</th>
@@ -238,7 +238,7 @@ export default function LogsTable({ events, loading }: Props) {
               <tr
                 key={`row-${ev.id}`}
                 onClick={() => toggle(ev.id)}
-                className={clsx('cursor-pointer transition-colors', cfg.rowBg, !isOpen && 'border-b border-gray-50 hover:bg-gray-50/60')}
+                className={clsx('cursor-pointer transition-colors', cfg.rowBg, !isOpen && 'border-b border-gray-700/50 hover:bg-gray-700/30')}
               >
                 <td className="py-2.5 pl-1 pr-1 text-gray-400">
                   {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
@@ -271,10 +271,10 @@ export default function LogsTable({ events, loading }: Props) {
                     <div className="space-y-3">
 
                       {/* Plain-English explanation */}
-                      <div className="flex gap-3 bg-white border border-gray-200 rounded-xl p-4">
+                      <div className="flex gap-3 bg-gray-900 border border-gray-700 rounded-xl p-4">
                         <span className="text-2xl leading-none mt-0.5 shrink-0">{cfg.icon}</span>
                         <div>
-                          <p className="text-sm font-semibold text-gray-800 mb-1">{explainMessage(ev.event_type, ev.message)}</p>
+                          <p className="text-sm font-semibold text-gray-200 mb-1">{explainMessage(ev.event_type, ev.message)}</p>
                           <p className="text-xs text-gray-500">
                             Severity: <span className="font-semibold capitalize">{ev.severity}</span> — {severityImpact[ev.severity]}
                           </p>
@@ -294,41 +294,41 @@ export default function LogsTable({ events, loading }: Props) {
                           </div>
                           <div className="bg-white border border-gray-200 rounded-lg p-3 text-center">
                             <div className="text-xs text-gray-400 mb-1">TCP Reason</div>
-                            <div className="text-sm font-bold text-red-600">{rds.tcpReason ?? '—'}</div>
+                            <div className="text-sm font-bold text-red-400">{rds.tcpReason ?? '—'}</div>
                           </div>
                           <div className="bg-white border border-gray-200 rounded-lg p-3 text-center">
                             <div className="text-xs text-gray-400 mb-1">State</div>
-                            <div className="text-sm font-bold text-orange-600">{rds.socketState ?? '—'}</div>
+                            <div className="text-sm font-bold text-orange-400">{rds.socketState ?? '—'}</div>
                           </div>
                         </div>
                       )}
 
                       {/* What to do */}
                       {suggestAction(ev.event_type, ev.severity, ev.message) && (
-                        <div className="flex gap-3 bg-blue-50 border border-blue-200 rounded-xl p-3">
+                        <div className="flex gap-3 bg-blue-900/20 border border-blue-700 rounded-xl p-3">
                           <span className="text-base shrink-0">💡</span>
                           <div>
-                            <p className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-1">What to do</p>
-                            <p className="text-sm text-blue-900">{suggestAction(ev.event_type, ev.severity, ev.message)}</p>
+                            <p className="text-xs font-bold text-blue-300 uppercase tracking-wide mb-1">What to do</p>
+                            <p className="text-sm text-blue-200">{suggestAction(ev.event_type, ev.severity, ev.message)}</p>
                           </div>
                         </div>
                       )}
 
                       {/* Technical details */}
                       <details className="group">
-                        <summary className="cursor-pointer text-xs text-gray-400 hover:text-gray-600 select-none list-none flex items-center gap-1">
+                        <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-300 select-none list-none flex items-center gap-1">
                           <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
                           Technical details
                         </summary>
-                        <div className="mt-2 bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
+                        <div className="mt-2 bg-gray-900 border border-gray-700 rounded-lg overflow-hidden">
                           <table className="w-full text-xs">
-                            <tbody className="divide-y divide-gray-100">
+                            <tbody className="divide-y divide-gray-700/50">
                               <tr><td className="px-3 py-2 font-medium text-gray-500 w-28">Time</td><td className="px-3 py-2 font-mono text-gray-700">{safeFormat(ev.timestamp, 'MMM d, yyyy h:mm:ss a')}</td></tr>
                               <tr><td className="px-3 py-2 font-medium text-gray-500">Server</td><td className="px-3 py-2 text-gray-700">{ev.server_name}</td></tr>
                               {parsed?.host    && <tr><td className="px-3 py-2 font-medium text-gray-500">Hostname</td><td className="px-3 py-2 font-mono text-gray-700">{parsed.host}</td></tr>}
                               {parsed?.process && <tr><td className="px-3 py-2 font-medium text-gray-500">Process</td><td className="px-3 py-2 font-mono text-gray-700">{parsed.process}</td></tr>}
                               <tr><td className="px-3 py-2 font-medium text-gray-500">Source</td><td className="px-3 py-2 text-gray-700">{sourceFriendly[ev.source] ?? ev.source}</td></tr>
-                              <tr><td className="px-3 py-2 font-medium text-gray-500 align-top">Raw log</td><td className="px-3 py-2 font-mono text-gray-600 break-all whitespace-pre-wrap text-xs">{parsed?.body ?? ev.message}</td></tr>
+                              <tr><td className="px-3 py-2 font-medium text-gray-500 align-top">Raw log</td><td className="px-3 py-2 font-mono text-gray-400 break-all whitespace-pre-wrap text-xs">{parsed?.body ?? ev.message}</td></tr>
                             </tbody>
                           </table>
                         </div>
