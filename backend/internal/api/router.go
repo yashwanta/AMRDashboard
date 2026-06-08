@@ -29,6 +29,7 @@ func NewRouter(db *pgxpool.Pool, encryptionKey string) http.Handler {
 
 		// Sync
 		r.Post("/servers/{id}/sync", syncH.SyncServer)
+		r.Post("/servers/{id}/deep-sync", syncH.DeepSync)
 		r.Post("/sync/all", syncH.SyncAll)
 		r.Post("/sync/test", syncH.TestConnection)
 

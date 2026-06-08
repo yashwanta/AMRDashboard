@@ -39,3 +39,5 @@ export const getTimeline = () => api.get<TimelinePoint[]>('/timeline').then(r =>
 export const getSyncHistory = () => api.get<SyncJob[]>('/sync-history').then(r => r.data)
 
 export const getServerStats = () => api.get('/server-stats').then(r => r.data)
+
+export const deepSync = (id: number, since: string) => api.post(`/servers/${id}/deep-sync?since=${encodeURIComponent(since)}`).then(r => r.data)

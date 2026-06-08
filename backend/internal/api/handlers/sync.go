@@ -207,6 +207,80 @@ func (h *SyncHandler) finishJob(ctx context.Context, jobID, count int, errMsg st
 		status, count, errMsg, jobID)
 }
 
+// DeepSync triggers a sync from a specific date (for historical data recovery).
+func (h *SyncHandler) DeepSync(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		jsonError(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	sinceStr := r.URL.Query().Get("since") // e.g. "2026-06-06T00:00:00Z"
+	since := time.Now().Add(-7 * 24 * time.Hour) // default 7 days
+	if sinceStr != "" {
+		if t, err := time.Parse(time.RFC3339, sinceStr); err == nil {
+			since = t
+		} else if t, err := time.Parse("2006-01-02", sinceStr); err == nil {
+			since = t
+		}
+	}
+	jobID, err := h.runSyncFrom(r.Context(), id, since)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, map[string]any{"job_id": jobID, "since": since.Format(time.RFC3339)})
+}
+
+func (h *SyncHandler) runSyncFrom(ctx context.Context, serverID int, since time.Time) (int, error) {
+	// Reuse runSync but override the since time by temporarily clearing last_sync_at
+	// We do this by passing since directly to FetchLogs
+	var jobID int
+	h.db.QueryRow(ctx, `INSERT INTO sync_jobs (server_id) VALUES ($1) RETURNING id`, serverID).Scan(&jobID)
+
+	type serverRow struct {
+		host, username, authType, passwordEnc, keyEnc string
+		port                                           int
+	}
+	var s serverRow
+	err := h.db.QueryRow(ctx, `SELECT host, port, username, auth_type, COALESCE(password_enc,''), COALESCE(private_key_enc,'') FROM servers WHERE id=$1`, serverID).
+		Scan(&s.host, &s.port, &s.username, &s.authType, &s.passwordEnc, &s.keyEnc)
+	if err != nil {
+		h.finishJob(ctx, jobID, 0, "server not found")
+		return jobID, nil
+	}
+
+	var password, privateKey string
+	if s.passwordEnc != "" { password, _ = decrypt(h.encryptionKey, s.passwordEnc) }
+	if s.keyEnc != ""      { privateKey, _ = decrypt(h.encryptionKey, s.keyEnc) }
+
+	sshclient2, err := sshclient.Connect(sshclient.Config{Host: s.host, Port: s.port, Username: s.username, AuthType: s.authType, Password: password, PrivateKey: privateKey})
+	if err != nil {
+		h.db.Exec(ctx, `UPDATE servers SET status='error' WHERE id=$1`, serverID)
+		h.finishJob(ctx, jobID, 0, err.Error())
+		return jobID, nil
+	}
+	defer sshclient2.Close()
+	h.db.Exec(ctx, `UPDATE servers SET status='online' WHERE id=$1`, serverID)
+
+	logMap, err := sshclient2.FetchLogs(since)
+	if err != nil { h.finishJob(ctx, jobID, 0, err.Error()); return jobID, nil }
+
+	total := 0
+	for source, output := range logMap {
+		events := parser.ParseOutput(output, source, serverID)
+		for _, ev := range events {
+			h.db.Exec(ctx, `INSERT INTO log_events (server_id, timestamp, event_type, severity, message, source, raw_line) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,
+				ev.ServerID, ev.Timestamp, ev.EventType, ev.Severity, ev.Message, ev.Source, ev.RawLine)
+			total++
+		}
+	}
+	// Run cleanup
+	h.db.Exec(ctx, `DELETE FROM log_events WHERE server_id=$1 AND source='system_info' AND event_type='power_off' AND (message LIKE '%system boot%' OR message='=last_reboot=' OR message LIKE 'reboot %')`, serverID)
+	h.db.Exec(ctx, `UPDATE servers SET last_sync_at=NOW() WHERE id=$1`, serverID)
+	h.finishJob(ctx, jobID, total, "")
+	return jobID, nil
+}
+
 // TestConnection verifies SSH credentials without storing.
 func (h *SyncHandler) TestConnection(w http.ResponseWriter, r *http.Request) {
 	var req models.ServerRequest

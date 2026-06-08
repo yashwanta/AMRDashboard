@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, RefreshCw, Trash2, Pencil, Wifi, WifiOff, AlertCircle, HelpCircle } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
-import { getServers, createServer, updateServer, deleteServer, syncServer } from '../api/client'
+import { getServers, createServer, updateServer, deleteServer, syncServer, deepSync } from '../api/client'
 import type { Server, ServerRequest } from '../types'
 import ServerForm from '../components/servers/ServerForm'
 
@@ -17,6 +17,53 @@ const statusBadge: Record<string, string> = {
   offline: 'bg-gray-700 text-gray-400 border border-gray-600',
   error:   'bg-red-900/50 text-red-400 border border-red-700',
   unknown: 'bg-gray-700 text-gray-400 border border-gray-600',
+}
+
+function DeepSyncButton({ serverId, onDone }: { serverId: number; onDone: () => void }) {
+  const [open, setOpen] = React.useState(false)
+  const [since, setSince] = React.useState('')
+  const [loading, setLoading] = React.useState(false)
+  const [done, setDone] = React.useState(false)
+
+  async function run() {
+    if (!since) return
+    setLoading(true)
+    try { await deepSync(serverId, new Date(since).toISOString()); setDone(true); onDone() } catch {}
+    setLoading(false); setTimeout(() => { setOpen(false); setDone(false) }, 2000)
+  }
+
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-indigo-800/50 hover:bg-indigo-700/60 text-indigo-300 border border-indigo-700 transition-colors"
+        title="Pull logs from a specific date">
+        📅 Deep Sync
+      </button>
+      {open && (
+        <div className="absolute right-0 top-9 z-50 bg-gray-800 border border-gray-600 rounded-xl p-4 shadow-2xl w-72">
+          <p className="text-xs text-gray-300 mb-2 font-semibold">Pull logs from date</p>
+          <p className="text-xs text-gray-500 mb-3">Use this to recover historical logs (restarts, crashes) from before the normal sync window.</p>
+          <input type="datetime-local" value={since} onChange={e => setSince(e.target.value)}
+            className="w-full text-xs bg-gray-900 border border-gray-600 text-gray-200 rounded-lg px-2 py-1.5 mb-3 focus:outline-none focus:border-indigo-500" />
+          <div className="flex gap-2 flex-wrap mb-2">
+            {['2 days ago', '3 days ago', '7 days ago', '14 days ago'].map((label, i) => {
+              const d = new Date(); d.setDate(d.getDate() - [2,3,7,14][i]); d.setHours(0,0,0,0)
+              const v = d.toISOString().slice(0,16)
+              return <button key={label} onClick={() => setSince(v)}
+                className="text-xs px-2 py-1 rounded-full border border-gray-600 text-gray-400 hover:bg-gray-700">{label}</button>
+            })}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={run} disabled={!since || loading}
+              className="flex-1 text-xs py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-colors">
+              {loading ? 'Pulling...' : done ? '✓ Done' : 'Pull Logs'}
+            </button>
+            <button onClick={() => setOpen(false)} className="text-xs px-3 py-2 rounded-lg bg-gray-700 text-gray-300">Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function ServersPage() {
@@ -76,10 +123,12 @@ export default function ServersPage() {
                       onClick={() => syncM.mutate(s.id)}
                       disabled={syncM.isPending}
                       className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-300 border border-gray-600 transition-colors disabled:opacity-50"
+                      title="Sync last 12 hours"
                     >
                       <RefreshCw size={12} className={syncM.isPending ? 'animate-spin' : ''} />
                       Sync
                     </button>
+                    <DeepSyncButton serverId={s.id} onDone={() => qc.invalidateQueries({ queryKey: ['servers'] })} />
                     <button onClick={() => { setEditing(s); setModal('edit') }}
                       className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700 transition-colors">
                       <Pencil size={14} />
