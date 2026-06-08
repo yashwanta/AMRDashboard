@@ -28,10 +28,27 @@ CREATE TABLE IF NOT EXISTS servers (
     auth_type     TEXT NOT NULL DEFAULT 'password',
     password_enc  TEXT,
     private_key_enc TEXT,
+    proxmox_host  TEXT NOT NULL DEFAULT '',
+    proxmox_port  INT  NOT NULL DEFAULT 22,
+    proxmox_username TEXT NOT NULL DEFAULT '',
+    proxmox_auth_type TEXT NOT NULL DEFAULT 'password',
+    proxmox_password_enc TEXT,
+    proxmox_private_key_enc TEXT,
+    vmid          TEXT NOT NULL DEFAULT '',
+    app_log_paths TEXT NOT NULL DEFAULT '',
     last_sync_at  TIMESTAMPTZ,
     status        TEXT NOT NULL DEFAULT 'unknown',
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS proxmox_host TEXT NOT NULL DEFAULT '';
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS proxmox_port INT NOT NULL DEFAULT 22;
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS proxmox_username TEXT NOT NULL DEFAULT '';
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS proxmox_auth_type TEXT NOT NULL DEFAULT 'password';
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS proxmox_password_enc TEXT;
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS proxmox_private_key_enc TEXT;
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS vmid TEXT NOT NULL DEFAULT '';
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS app_log_paths TEXT NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS log_events (
     id          BIGSERIAL PRIMARY KEY,

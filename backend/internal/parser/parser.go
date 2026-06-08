@@ -31,18 +31,28 @@ var rules = []rule{
 	{[]string{"systemd[1]: Rebooting", "Starting Reboot", "Stopped target Graphical Interface"}, "ubuntu_server_reboot", "medium"},
 
 	// Proxmox host shutdown / reboot.
-	{[]string{"pvedaemon restart", "pveproxy restart", "pvestatd restart", "pve-ha-crm restart", "pve-ha-lrm restart"}, "proxmox_host_reboot", "medium"},
+	{[]string{"host is going down", "host shutdown", "node shutdown", "pve host shutdown"}, "proxmox_host_shutdown", "high"},
+	{[]string{"host reboot", "node reboot", "pve host reboot", "proxmox ve reboot"}, "proxmox_host_reboot", "high"},
 	{[]string{"proxmox ve reboot", "proxmox-ve reboot", "pve-manager reboot"}, "proxmox_host_reboot", "medium"},
-	{[]string{"proxmox host shutdown", "PVE host shutdown", "node shutdown"}, "proxmox_host_shutdown", "high"},
-	{[]string{"proxmox host reboot", "PVE host reboot", "node reboot"}, "proxmox_host_reboot", "high"},
 
 	// VM shutdown / reboot events as reported by QEMU/libvirt/Proxmox.
-	{[]string{"qm shutdown", "guest-shutdown", "VM shutdown", "qemu: terminating on signal", "ACPI shutdown"}, "vm_shutdown", "medium"},
-	{[]string{"qm reboot", "guest reboot", "VM reboot", "resetting vm", "system_reset"}, "vm_reboot", "medium"},
+	{[]string{"qm shutdown", "guest-shutdown", "vm shutdown", "qemu: terminating on signal", "acpi shutdown"}, "vm_stopped", "medium"},
+	{[]string{"qm stop", "stopping vm", "vm stopped", "status: stopped", "stop vm"}, "vm_stopped", "high"},
+	{[]string{"qm start", "starting vm", "vm started", "status: running", "start vm"}, "vm_started", "info"},
+	{[]string{"qm reboot", "guest reboot", "vm reboot", "resetting vm", "system_reset"}, "vm_reboot", "medium"},
+	{[]string{"killed process", "kill process", "oom-kill", "out of memory: kill process"}, "vm_killed_by_oom", "critical"},
+
+	// Proxmox memory / backup / HA.
+	{[]string{"out of memory", "oom killer", "oom_kill_process", "memory allocation failure"}, "host_memory_exhaustion", "critical"},
+	{[]string{"swap full", "swap is full", "no swap space", "swap usage 100"}, "swap_full", "critical"},
+	{[]string{"backup found vm stopped", "not running - VM is stopped", "vm is stopped", "guest is not running"}, "backup_found_vm_stopped", "high"},
+	{[]string{"vzdump", "backup job", "proxmox backup", "pbs", "backup started", "backup finished"}, "backup_job", "medium"},
+	{[]string{"ha-manager", "pve-ha-crm", "pve-ha-lrm", "service migrated", "fence", "recovering service"}, "ha_action", "high"},
 
 	// Power and network events.
 	{[]string{"AC power", "UPS", "on battery", "power lost", "power restored", "Power button pressed"}, "power_network_event", "high"},
-	{[]string{"NETDEV WATCHDOG", "transmit timeout", "link is down", "Link is Down", "link becomes ready", "network unreachable", "carrier lost"}, "power_network_event", "medium"},
+	{[]string{"dhcp failed", "no dhcpoffers", "network unreachable", "temporary failure in name resolution"}, "network_dhcp_failure", "high"},
+	{[]string{"NETDEV WATCHDOG", "transmit timeout", "link is down", "Link is Down", "link becomes ready", "carrier lost"}, "network_dhcp_failure", "medium"},
 
 	// Crashes & kernel panics.
 	{[]string{"kernel panic", "Kernel panic"}, "crash", "critical"},
@@ -61,11 +71,17 @@ var rules = []rule{
 	{[]string{"Buffer I/O error", "end_request"}, "disk_error", "high"},
 	{[]string{"filesystem error", "disk error"}, "disk_error", "high"},
 	{[]string{"SCSI error", "No space left"}, "disk_error", "high"},
+	{[]string{"smart overall-health", "SMART Health Status", "zpool status", "read error", "write error"}, "disk_smart_issue", "high"},
 
 	// Service failures.
 	{[]string{"Failed to start", "failed with result", "Service entered failed state"}, "error", "high"},
 	{[]string{"systemd[1]: Failed"}, "error", "high"},
 	{[]string{"startup_robod", "RoboShopPro", "rdscore"}, "error", "medium"},
+	{[]string{"failed unit", "service failed", "main process exited", "unit entered failed state"}, "service_failure", "high"},
+
+	// Ubuntu log gaps / auth activity.
+	{[]string{"journal begins", "logs begin at", "rotated", "time jump", "clock jump"}, "ubuntu_log_gap", "medium"},
+	{[]string{"sshd", "accepted password", "accepted publickey", "failed password", "session opened", "sudo:"}, "ssh_login_activity", "low"},
 
 	// Hardware errors.
 	{[]string{"MCE", "Machine check events logged", "hardware error"}, "error", "critical"},
@@ -97,7 +113,7 @@ var shutdownRebootTypes = map[string]bool{
 	"ubuntu_server_reboot":   true,
 	"proxmox_host_shutdown":  true,
 	"proxmox_host_reboot":    true,
-	"vm_shutdown":            true,
+	"vm_stopped":             true,
 	"vm_reboot":              true,
 }
 

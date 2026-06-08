@@ -36,7 +36,7 @@ func TestParseLineLogReviewCategories(t *testing.T) {
 			line:      "Jun  8 12:00:00 pve01 pvedaemon restart requested after node reboot",
 			source:    "syslog",
 			eventType: "proxmox_host_reboot",
-			severity:  "medium",
+			severity:  "high",
 		},
 		{
 			name:      "proxmox host shutdown",
@@ -56,14 +56,14 @@ func TestParseLineLogReviewCategories(t *testing.T) {
 			name:      "vm shutdown",
 			line:      "Jun  8 12:00:00 pve01 qm shutdown 104 --timeout 60",
 			source:    "syslog",
-			eventType: "vm_shutdown",
+			eventType: "vm_stopped",
 			severity:  "medium",
 		},
 		{
 			name:      "power network event",
 			line:      "Jun  8 12:00:00 amr-01 kernel: eth0: link is down",
 			source:    "kern.log",
-			eventType: "power_network_event",
+			eventType: "network_dhcp_failure",
 			severity:  "medium",
 		},
 		{

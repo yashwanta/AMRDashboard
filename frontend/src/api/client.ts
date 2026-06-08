@@ -1,7 +1,7 @@
 import axios from 'axios'
 import type {
   Server, ServerRequest, LogEvent, DashboardStats,
-  TimelinePoint, SyncJob
+  TimelinePoint, SyncJob, IncidentSummary
 } from '../types'
 
 const api = axios.create({ baseURL: '/api' })
@@ -22,6 +22,8 @@ export interface LogFilters {
   event_type?: string
   severity?: string
   source?: string
+  proxmox_host?: string
+  vmid?: string
   q?: string
   from?: string
   to?: string
@@ -43,3 +45,12 @@ export const getSyncHistory = () => api.get<SyncJob[]>('/sync-history').then(r =
 export const getServerStats = () => api.get('/server-stats').then(r => r.data)
 
 export const deepSync = (id: number, since: string) => api.post(`/servers/${id}/deep-sync?since=${encodeURIComponent(since)}`).then(r => r.data)
+
+export interface IncidentSummaryParams {
+  server_id: number
+  from?: string
+  to?: string
+}
+
+export const getIncidentSummary = (params: IncidentSummaryParams) =>
+  api.get<IncidentSummary>('/incidents/summary', { params }).then(r => r.data)

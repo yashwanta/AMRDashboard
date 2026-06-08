@@ -21,6 +21,24 @@ type SyncHandler struct {
 	encryptionKey string
 }
 
+type syncServerRow struct {
+	host               string
+	port               int
+	username           string
+	authType           string
+	passwordEnc        string
+	keyEnc             string
+	proxmoxHost        string
+	proxmoxPort        int
+	proxmoxUsername    string
+	proxmoxAuthType    string
+	proxmoxPasswordEnc string
+	proxmoxKeyEnc      string
+	vmid               string
+	appLogPaths        string
+	lastSync           *time.Time
+}
+
 func NewSyncHandler(db *pgxpool.Pool, key string) *SyncHandler {
 	return &SyncHandler{db: db, encryptionKey: key}
 }
@@ -91,20 +109,7 @@ func (h *SyncHandler) RunScheduled() {
 }
 
 func (h *SyncHandler) runSync(ctx context.Context, serverID int) (int, error) {
-	// Load server credentials
-	var s struct {
-		host        string
-		port        int
-		username    string
-		authType    string
-		passwordEnc string
-		keyEnc      string
-		lastSync    *time.Time
-	}
-	err := h.db.QueryRow(ctx, `
-		SELECT host, port, username, auth_type, COALESCE(password_enc,''), COALESCE(private_key_enc,''), last_sync_at
-		FROM servers WHERE id=$1`, serverID).
-		Scan(&s.host, &s.port, &s.username, &s.authType, &s.passwordEnc, &s.keyEnc, &s.lastSync)
+	s, err := h.loadSyncServer(ctx, serverID, true)
 	if err != nil {
 		return 0, fmt.Errorf("load server: %w", err)
 	}
@@ -118,53 +123,10 @@ func (h *SyncHandler) runSync(ctx context.Context, serverID int) (int, error) {
 		since = *s.lastSync
 	}
 
-	// Decrypt credentials
-	var password, privateKey string
-	if s.passwordEnc != "" {
-		password, _ = decrypt(h.encryptionKey, s.passwordEnc)
-	}
-	if s.keyEnc != "" {
-		privateKey, _ = decrypt(h.encryptionKey, s.keyEnc)
-	}
-
-	// Connect via SSH
-	client, err := sshclient.Connect(sshclient.Config{
-		Host:       s.host,
-		Port:       s.port,
-		Username:   s.username,
-		AuthType:   s.authType,
-		Password:   password,
-		PrivateKey: privateKey,
-	})
-
-	if err != nil {
-		h.db.Exec(ctx, `UPDATE servers SET status='error' WHERE id=$1`, serverID)
-		h.finishJob(ctx, jobID, 0, err.Error())
-		return jobID, nil // Return job ID so caller can track it; error is in the job record
-	}
-	defer client.Close()
-
-	h.db.Exec(ctx, `UPDATE servers SET status='online' WHERE id=$1`, serverID)
-
-	// Pull logs
-	logMap, err := client.FetchLogs(since)
-	if err != nil {
-		h.finishJob(ctx, jobID, 0, err.Error())
+	total, syncErr := h.collectAndStore(ctx, serverID, s, since, false)
+	if syncErr != nil {
+		h.finishJob(ctx, jobID, total, syncErr.Error())
 		return jobID, nil
-	}
-
-	// Parse and insert events
-	total := 0
-	for source, output := range logMap {
-		events := parser.ParseOutput(output, source, serverID)
-		for _, ev := range events {
-			h.db.Exec(ctx, `
-				INSERT INTO log_events (server_id, timestamp, event_type, severity, message, source, raw_line)
-				VALUES ($1,$2,$3,$4,$5,$6,$7)
-				ON CONFLICT DO NOTHING`,
-				ev.ServerID, ev.Timestamp, ev.EventType, ev.Severity, ev.Message, ev.Source, ev.RawLine)
-			total++
-		}
 	}
 
 	now := time.Now()
@@ -214,7 +176,7 @@ func (h *SyncHandler) DeepSync(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	sinceStr := r.URL.Query().Get("since") // e.g. "2026-06-06T00:00:00Z"
+	sinceStr := r.URL.Query().Get("since")       // e.g. "2026-06-06T00:00:00Z"
 	since := time.Now().Add(-7 * 24 * time.Hour) // default 7 days
 	if sinceStr != "" {
 		if t, err := time.Parse(time.RFC3339, sinceStr); err == nil {
@@ -232,53 +194,121 @@ func (h *SyncHandler) DeepSync(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SyncHandler) runSyncFrom(ctx context.Context, serverID int, since time.Time) (int, error) {
-	// Reuse runSync but override the since time by temporarily clearing last_sync_at
-	// We do this by passing since directly to FetchLogs
 	var jobID int
 	h.db.QueryRow(ctx, `INSERT INTO sync_jobs (server_id) VALUES ($1) RETURNING id`, serverID).Scan(&jobID)
 
-	type serverRow struct {
-		host, username, authType, passwordEnc, keyEnc string
-		port                                           int
-	}
-	var s serverRow
-	err := h.db.QueryRow(ctx, `SELECT host, port, username, auth_type, COALESCE(password_enc,''), COALESCE(private_key_enc,'') FROM servers WHERE id=$1`, serverID).
-		Scan(&s.host, &s.port, &s.username, &s.authType, &s.passwordEnc, &s.keyEnc)
+	s, err := h.loadSyncServer(ctx, serverID, false)
 	if err != nil {
 		h.finishJob(ctx, jobID, 0, "server not found")
 		return jobID, nil
 	}
 
-	var password, privateKey string
-	if s.passwordEnc != "" { password, _ = decrypt(h.encryptionKey, s.passwordEnc) }
-	if s.keyEnc != ""      { privateKey, _ = decrypt(h.encryptionKey, s.keyEnc) }
-
-	sshclient2, err := sshclient.Connect(sshclient.Config{Host: s.host, Port: s.port, Username: s.username, AuthType: s.authType, Password: password, PrivateKey: privateKey})
-	if err != nil {
-		h.db.Exec(ctx, `UPDATE servers SET status='error' WHERE id=$1`, serverID)
-		h.finishJob(ctx, jobID, 0, err.Error())
+	total, syncErr := h.collectAndStore(ctx, serverID, s, since, true)
+	if syncErr != nil {
+		h.finishJob(ctx, jobID, total, syncErr.Error())
 		return jobID, nil
-	}
-	defer sshclient2.Close()
-	h.db.Exec(ctx, `UPDATE servers SET status='online' WHERE id=$1`, serverID)
-
-	logMap, err := sshclient2.FetchLogs(since)
-	if err != nil { h.finishJob(ctx, jobID, 0, err.Error()); return jobID, nil }
-
-	total := 0
-	for source, output := range logMap {
-		events := parser.ParseOutput(output, source, serverID)
-		for _, ev := range events {
-			h.db.Exec(ctx, `INSERT INTO log_events (server_id, timestamp, event_type, severity, message, source, raw_line) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,
-				ev.ServerID, ev.Timestamp, ev.EventType, ev.Severity, ev.Message, ev.Source, ev.RawLine)
-			total++
-		}
 	}
 	// Run cleanup
 	h.db.Exec(ctx, `DELETE FROM log_events WHERE server_id=$1 AND source='system_info' AND event_type='power_off' AND (message LIKE '%system boot%' OR message='=last_reboot=' OR message LIKE 'reboot %')`, serverID)
 	h.db.Exec(ctx, `UPDATE servers SET last_sync_at=NOW() WHERE id=$1`, serverID)
 	h.finishJob(ctx, jobID, total, "")
 	return jobID, nil
+}
+
+func (h *SyncHandler) loadSyncServer(ctx context.Context, serverID int, includeLastSync bool) (syncServerRow, error) {
+	var s syncServerRow
+	err := h.db.QueryRow(ctx, `
+		SELECT host, port, username, auth_type, COALESCE(password_enc,''), COALESCE(private_key_enc,''),
+		       COALESCE(proxmox_host,''), proxmox_port, COALESCE(proxmox_username,''), proxmox_auth_type,
+		       COALESCE(proxmox_password_enc,''), COALESCE(proxmox_private_key_enc,''),
+		       COALESCE(vmid,''), COALESCE(app_log_paths,''), last_sync_at
+		FROM servers WHERE id=$1`, serverID).
+		Scan(&s.host, &s.port, &s.username, &s.authType, &s.passwordEnc, &s.keyEnc,
+			&s.proxmoxHost, &s.proxmoxPort, &s.proxmoxUsername, &s.proxmoxAuthType,
+			&s.proxmoxPasswordEnc, &s.proxmoxKeyEnc, &s.vmid, &s.appLogPaths, &s.lastSync)
+	if err != nil {
+		return s, err
+	}
+	if !includeLastSync {
+		s.lastSync = nil
+	}
+	if s.proxmoxPort == 0 {
+		s.proxmoxPort = 22
+	}
+	if s.proxmoxAuthType == "" {
+		s.proxmoxAuthType = "password"
+	}
+	return s, nil
+}
+
+func (h *SyncHandler) collectAndStore(ctx context.Context, serverID int, s syncServerRow, since time.Time, includeProxmox bool) (int, error) {
+	password, privateKey := h.decryptPair(s.passwordEnc, s.keyEnc)
+
+	client, err := sshclient.Connect(sshclient.Config{
+		Host:       s.host,
+		Port:       s.port,
+		Username:   s.username,
+		AuthType:   s.authType,
+		Password:   password,
+		PrivateKey: privateKey,
+	})
+	if err != nil {
+		h.db.Exec(ctx, `UPDATE servers SET status='error' WHERE id=$1`, serverID)
+		return 0, err
+	}
+	defer client.Close()
+
+	h.db.Exec(ctx, `UPDATE servers SET status='online' WHERE id=$1`, serverID)
+
+	logMap, err := client.FetchLogs(since, s.appLogPaths)
+	if err != nil {
+		return 0, err
+	}
+
+	if includeProxmox && s.proxmoxHost != "" && s.proxmoxUsername != "" {
+		proxPass, proxKey := h.decryptPair(s.proxmoxPasswordEnc, s.proxmoxKeyEnc)
+		proxClient, err := sshclient.Connect(sshclient.Config{
+			Host:       s.proxmoxHost,
+			Port:       s.proxmoxPort,
+			Username:   s.proxmoxUsername,
+			AuthType:   s.proxmoxAuthType,
+			Password:   proxPass,
+			PrivateKey: proxKey,
+		})
+		if err == nil {
+			defer proxClient.Close()
+			for source, output := range proxClient.FetchProxmoxLogs(since, s.vmid) {
+				logMap[source] = output
+			}
+		} else {
+			logMap["proxmox_connection"] = fmt.Sprintf("%s proxmox ssh: %v", time.Now().UTC().Format(time.RFC3339), err)
+		}
+	}
+
+	total := 0
+	for source, output := range logMap {
+		events := parser.ParseOutput(output, source, serverID)
+		for _, ev := range events {
+			h.db.Exec(ctx, `
+				INSERT INTO log_events (server_id, timestamp, event_type, severity, message, source, raw_line)
+				VALUES ($1,$2,$3,$4,$5,$6,$7)
+				ON CONFLICT DO NOTHING`,
+				ev.ServerID, ev.Timestamp, ev.EventType, ev.Severity, ev.Message, ev.Source, ev.RawLine)
+			total++
+		}
+	}
+	return total, nil
+}
+
+func (h *SyncHandler) decryptPair(passwordEnc, keyEnc string) (string, string) {
+	var password, privateKey string
+	if passwordEnc != "" {
+		password, _ = decrypt(h.encryptionKey, passwordEnc)
+	}
+	if keyEnc != "" {
+		privateKey, _ = decrypt(h.encryptionKey, keyEnc)
+	}
+	return password, privateKey
 }
 
 // TestConnection verifies SSH credentials without storing.

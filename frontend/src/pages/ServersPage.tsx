@@ -113,6 +113,13 @@ export default function ServersPage() {
                       <p className="text-sm text-gray-400 mt-1 font-mono">
                         {s.username}@{s.host}:{s.port}
                       </p>
+                      {(s.proxmox_host || s.vmid || s.app_log_paths) && (
+                        <div className="flex flex-wrap gap-2 mt-2 text-xs">
+                          {s.proxmox_host && <span className="px-2 py-0.5 rounded-md bg-purple-900/40 text-purple-200 border border-purple-800">PVE {s.proxmox_host}</span>}
+                          {s.vmid && <span className="px-2 py-0.5 rounded-md bg-sky-900/40 text-sky-200 border border-sky-800">VMID {s.vmid}</span>}
+                          {s.app_log_paths && <span className="px-2 py-0.5 rounded-md bg-gray-900 text-gray-300 border border-gray-700">Custom app logs</span>}
+                        </div>
+                      )}
                       <p className="text-xs text-gray-500 mt-1">
                         Last synced: {s.last_sync_at ? format(parseISO(s.last_sync_at), 'MMM d, h:mm a') : 'Never'}
                       </p>
@@ -147,7 +154,7 @@ export default function ServersPage() {
 
       {modal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-md">
+          <div className="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
               <h2 className="font-semibold text-white">{modal === 'add' ? 'Add Server' : 'Edit Server'}</h2>
               <button onClick={() => setModal(null)} className="text-gray-400 hover:text-white text-xl leading-none">&times;</button>

@@ -3,6 +3,8 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yashwanta/AMRDashboard/internal/models"
@@ -49,6 +51,16 @@ func (h *LogHandler) List(w http.ResponseWriter, r *http.Request) {
 	if source := q.Get("source"); source != "" {
 		where += " AND le.source=$" + strconv.Itoa(argN)
 		args = append(args, source)
+		argN++
+	}
+	if host := q.Get("proxmox_host"); host != "" {
+		where += " AND s.proxmox_host=$" + strconv.Itoa(argN)
+		args = append(args, host)
+		argN++
+	}
+	if vmid := q.Get("vmid"); vmid != "" {
+		where += " AND s.vmid=$" + strconv.Itoa(argN)
+		args = append(args, vmid)
 		argN++
 	}
 	if search := q.Get("q"); search != "" {
@@ -107,13 +119,144 @@ func (h *LogHandler) Stats(w http.ResponseWriter, r *http.Request) {
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events`).Scan(&stats.TotalEvents)
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE severity IN ('critical','high')`).Scan(&stats.CriticalEvents)
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='crash'`).Scan(&stats.CrashCount)
-	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type IN ('power_off','ubuntu_server_shutdown','ubuntu_server_reboot','proxmox_host_shutdown','proxmox_host_reboot','vm_shutdown','vm_reboot','power_network_event')`).Scan(&stats.PowerOffCount)
+	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type IN ('power_off','ubuntu_server_shutdown','ubuntu_server_reboot','proxmox_host_shutdown','proxmox_host_reboot','vm_stopped','vm_reboot','power_network_event')`).Scan(&stats.PowerOffCount)
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='error'`).Scan(&stats.ErrorCount)
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='robot_offline'`).Scan(&stats.RobotOfflineCount)
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='robot_online'`).Scan(&stats.RobotOnlineCount)
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='disk_error'`).Scan(&stats.DiskErrorCount)
+	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type IN ('ubuntu_server_shutdown','ubuntu_server_reboot','ubuntu_log_gap','service_failure','ssh_login_activity')`).Scan(&stats.UbuntuEventCount)
+	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type IN ('proxmox_host_shutdown','proxmox_host_reboot','ha_action')`).Scan(&stats.ProxmoxEventCount)
+	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type IN ('vm_stopped','vm_started','vm_reboot','vm_killed_by_oom')`).Scan(&stats.VMEventCount)
+	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type IN ('vm_killed_by_oom','host_memory_exhaustion','swap_full')`).Scan(&stats.MemoryEventCount)
+	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type IN ('backup_job','backup_found_vm_stopped')`).Scan(&stats.BackupEventCount)
 
 	jsonOK(w, stats)
+}
+
+func (h *LogHandler) IncidentSummary(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	serverID, err := strconv.Atoi(q.Get("server_id"))
+	if err != nil || serverID <= 0 {
+		jsonError(w, "server_id is required", http.StatusBadRequest)
+		return
+	}
+
+	to := time.Now().UTC()
+	from := to.Add(-24 * time.Hour)
+	if raw := q.Get("from"); raw != "" {
+		if t, err := time.Parse(time.RFC3339, raw); err == nil {
+			from = t
+		}
+	}
+	if raw := q.Get("to"); raw != "" {
+		if t, err := time.Parse(time.RFC3339, raw); err == nil {
+			to = t
+		}
+	}
+
+	var summary models.IncidentSummary
+	summary.ServerID = serverID
+	summary.From = from
+	summary.To = to
+	if err := h.db.QueryRow(r.Context(), `
+		SELECT name, COALESCE(proxmox_host,''), COALESCE(vmid,'')
+		FROM servers WHERE id=$1`, serverID).Scan(&summary.ServerName, &summary.ProxmoxHost, &summary.VMID); err != nil {
+		jsonError(w, "server not found", http.StatusNotFound)
+		return
+	}
+
+	rows, err := h.db.Query(r.Context(), `
+		SELECT timestamp, event_type, severity, source, message
+		FROM log_events
+		WHERE server_id=$1 AND timestamp >= $2 AND timestamp <= $3
+		ORDER BY timestamp ASC
+		LIMIT 200`, serverID, from, to)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	counts := map[string]int{}
+	var first, recovered *time.Time
+	var evidence []models.IncidentEvidence
+	for rows.Next() {
+		var ev models.IncidentEvidence
+		if err := rows.Scan(&ev.Timestamp, &ev.EventType, &ev.Severity, &ev.Source, &ev.Message); err != nil {
+			continue
+		}
+		counts[ev.EventType]++
+		if ev.EventType != "unknown" && first == nil {
+			t := ev.Timestamp
+			first = &t
+		}
+		if ev.EventType == "robot_online" || ev.EventType == "vm_started" {
+			t := ev.Timestamp
+			recovered = &t
+		}
+		if len(evidence) < 12 && ev.EventType != "unknown" {
+			if len(ev.Message) > 220 {
+				ev.Message = ev.Message[:220]
+			}
+			evidence = append(evidence, ev)
+		}
+	}
+	if evidence == nil {
+		evidence = []models.IncidentEvidence{}
+	}
+
+	summary.StartedAt = first
+	summary.RecoveredAt = recovered
+	summary.Evidence = evidence
+	summary.WhatHappened, summary.RootCause, summary.RecommendedFix = correlateIncident(counts, summary)
+	jsonOK(w, summary)
+}
+
+func correlateIncident(counts map[string]int, s models.IncidentSummary) (string, string, string) {
+	has := func(types ...string) bool {
+		for _, t := range types {
+			if counts[t] > 0 {
+				return true
+			}
+		}
+		return false
+	}
+	label := s.ServerName
+	if s.VMID != "" {
+		label += " VM " + s.VMID
+	}
+
+	switch {
+	case has("vm_killed_by_oom") && has("host_memory_exhaustion"):
+		return label + " stopped during a host memory pressure event.", "VM stopped due to Proxmox host memory exhaustion.", "Reduce host memory pressure, review VM reservations/ballooning, and consider moving workloads before restarting the VM."
+	case has("backup_found_vm_stopped") && has("vm_stopped"):
+		return label + " was already stopped when a backup job ran.", "VM was stopped before or during backup processing.", "Check Proxmox task history around the stop event, then verify backup scheduling and VM start policy."
+	case has("ubuntu_log_gap") && has("proxmox_host_reboot", "proxmox_host_shutdown"):
+		return label + " had an Ubuntu log gap during a Proxmox host event.", "Proxmox host shutdown or reboot likely interrupted the VM.", "Review host maintenance/power events and confirm the VM auto-start policy."
+	case has("vm_stopped") && has("host_memory_exhaustion", "swap_full"):
+		return label + " stopped while memory or swap was exhausted.", "VM outage likely caused by memory exhaustion.", "Free host memory, increase swap/RAM, and inspect high-memory processes."
+	case has("robot_offline") && !has("vm_stopped", "ubuntu_server_reboot", "proxmox_host_reboot"):
+		return label + " reported robot disconnects without matching host or VM failure.", "Robot connection or network issue.", "Check robot power, cabling/Wi-Fi, and FleetManager robot service connectivity."
+	case has("crash", "error", "service_failure"):
+		return label + " recorded application or service failures.", "FleetManager/application service failure.", "Restart failed services, inspect app logs, and verify dependencies such as database and storage."
+	case has("disk_smart_issue", "disk_error"):
+		return label + " recorded storage errors.", "Disk, filesystem, or SMART issue.", "Check disk health immediately, verify backups, and remediate failing storage."
+	case has("network_dhcp_failure", "power_network_event"):
+		return label + " recorded network or power events.", "Network, DHCP, link, or power interruption.", "Check switch port, DHCP lease history, UPS, and host NIC status."
+	case has("ssh_login_activity") && !has("robot_offline", "vm_stopped", "crash"):
+		return label + " had login activity but no clear outage signal.", "Administrative access observed; root cause not determined from available logs.", "Confirm whether an operator performed maintenance in this window."
+	default:
+		var names []string
+		for t, c := range counts {
+			if c > 0 && t != "unknown" {
+				names = append(names, t)
+			}
+		}
+		if len(names) == 0 {
+			return "No categorized outage events were found in this window.", "Unknown.", "Expand the time range or run Deep Sync with Proxmox mapping configured."
+		}
+		return label + " had categorized events: " + strings.Join(names, ", ") + ".", "Unknown from available evidence.", "Review the evidence list and expand Deep Sync around the first event."
+	}
 }
 
 func (h *LogHandler) Timeline(w http.ResponseWriter, r *http.Request) {

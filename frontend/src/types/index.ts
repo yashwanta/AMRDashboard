@@ -5,6 +5,12 @@ export interface Server {
   port: number
   username: string
   auth_type: 'password' | 'key'
+  proxmox_host: string
+  proxmox_port: number
+  proxmox_username: string
+  proxmox_auth_type: 'password' | 'key'
+  vmid: string
+  app_log_paths: string
   last_sync_at: string | null
   status: 'online' | 'offline' | 'error' | 'unknown'
   created_at: string
@@ -18,6 +24,14 @@ export interface ServerRequest {
   auth_type: 'password' | 'key'
   password?: string
   private_key?: string
+  proxmox_host?: string
+  proxmox_port?: number
+  proxmox_username?: string
+  proxmox_auth_type?: 'password' | 'key'
+  proxmox_password?: string
+  proxmox_private_key?: string
+  vmid?: string
+  app_log_paths?: string
 }
 
 export interface LogEvent {
@@ -31,8 +45,20 @@ export interface LogEvent {
     | 'ubuntu_server_reboot'
     | 'proxmox_host_shutdown'
     | 'proxmox_host_reboot'
-    | 'vm_shutdown'
+    | 'vm_stopped'
+    | 'vm_started'
     | 'vm_reboot'
+    | 'vm_killed_by_oom'
+    | 'host_memory_exhaustion'
+    | 'swap_full'
+    | 'backup_job'
+    | 'backup_found_vm_stopped'
+    | 'ha_action'
+    | 'disk_smart_issue'
+    | 'network_dhcp_failure'
+    | 'ssh_login_activity'
+    | 'service_failure'
+    | 'ubuntu_log_gap'
     | 'power_network_event'
     | 'unknown'
     | 'crash'
@@ -60,6 +86,11 @@ export interface DashboardStats {
   robot_offline_count: number
   robot_online_count: number
   disk_error_count: number
+  ubuntu_event_count: number
+  proxmox_event_count: number
+  vm_event_count: number
+  memory_event_count: number
+  backup_event_count: number
 }
 
 export interface TimelinePoint {
@@ -81,3 +112,26 @@ export interface SyncJob {
 
 export type EventType = LogEvent['event_type']
 export type Severity = LogEvent['severity']
+
+export interface IncidentEvidence {
+  timestamp: string
+  event_type: string
+  severity: string
+  source: string
+  message: string
+}
+
+export interface IncidentSummary {
+  server_id: number
+  server_name: string
+  proxmox_host: string
+  vmid: string
+  from: string
+  to: string
+  what_happened: string
+  started_at: string | null
+  recovered_at: string | null
+  root_cause: string
+  recommended_fix: string
+  evidence: IncidentEvidence[]
+}

@@ -71,8 +71,8 @@ export default function DashboardPage() {
     }))
   })()
 
-  const eventIcons: Record<string, string> = { robot_offline:'🤖', robot_online:'📡', crash:'💥', power_off:'⚡', disk_error:'💾', error:'❌', warning:'⚠️', update:'🔄' }
-  const eventLabels: Record<string, string> = { robot_offline:'Robot offline', robot_online:'Robot online', crash:'App crash', power_off:'Restart', disk_error:'Disk error', error:'Error', warning:'Warning', update:'Update' }
+  const eventIcons: Record<string, string> = { robot_offline:'!', robot_online:'+', crash:'x', ubuntu_server_reboot:'R', ubuntu_server_shutdown:'S', proxmox_host_reboot:'P', proxmox_host_shutdown:'P', vm_stopped:'VM', vm_started:'VM', vm_killed_by_oom:'OOM', host_memory_exhaustion:'MEM', backup_job:'B', backup_found_vm_stopped:'B', ha_action:'HA', disk_error:'D', disk_smart_issue:'D', network_dhcp_failure:'N', service_failure:'SF', ssh_login_activity:'SSH', error:'E', warning:'W', update:'U' }
+  const eventLabels: Record<string, string> = { robot_offline:'Robot offline', robot_online:'Robot online', crash:'App crash', ubuntu_server_reboot:'Ubuntu reboot', ubuntu_server_shutdown:'Ubuntu shutdown', proxmox_host_reboot:'Proxmox reboot', proxmox_host_shutdown:'Proxmox shutdown', vm_stopped:'VM stopped', vm_started:'VM started', vm_killed_by_oom:'VM killed by OOM', host_memory_exhaustion:'Host memory exhaustion', backup_job:'Backup job', backup_found_vm_stopped:'Backup found VM stopped', ha_action:'HA action', disk_error:'Disk error', disk_smart_issue:'Disk/SMART issue', network_dhcp_failure:'Network failure', service_failure:'Service failure', ssh_login_activity:'SSH login', error:'Error', warning:'Warning', update:'Update' }
 
   return (
     <div className="flex flex-col h-full bg-gray-900 text-gray-100">
@@ -92,13 +92,18 @@ export default function DashboardPage() {
 
       <div className="flex-1 overflow-y-auto p-5 space-y-4">
 
-        {/* 4 metric cards */}
-        <div className="grid grid-cols-4 gap-3">
+        {/* Metric cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-3">
           {[
             { Icon: Server,        val: `${stats?.online_servers ?? 0}`, label: 'SERVERS',           sub: `${stats?.online_servers ?? 0} online  ${(stats?.total_servers ?? 0) - (stats?.online_servers ?? 0)} offline`, subColor: 'text-green-400', bar: 'bg-green-500' },
             { Icon: Radio,         val: String(stats?.robot_offline_count ?? 0), label: 'ROBOT DISCONNECTS', sub: `${stats?.robot_online_count ?? 0} connections`, subColor: 'text-red-400',   bar: 'bg-red-500',   valColor: 'text-red-400' },
             { Icon: AlertTriangle, val: String(stats?.crash_count ?? 0), label: 'APP CRASHES',        sub: 'All time',            subColor: 'text-gray-500', bar: 'bg-amber-500', valColor: 'text-amber-400' },
-            { Icon: Activity,      val: (stats?.total_events ?? 0).toLocaleString(), label: 'TOTAL EVENTS', sub: `${stats?.critical_events ?? 0} critical`, subColor: 'text-red-400',   bar: 'bg-indigo-500' },
+            { Icon: Activity,      val: String(stats?.ubuntu_event_count ?? 0), label: 'UBUNTU EVENTS', sub: 'Reboot, shutdown, log gap, service', subColor: 'text-blue-300', bar: 'bg-blue-500' },
+            { Icon: Shield,        val: String(stats?.proxmox_event_count ?? 0), label: 'PROXMOX HOST', sub: 'Host reboot, shutdown, HA', subColor: 'text-purple-300', bar: 'bg-purple-500' },
+            { Icon: Server,        val: String(stats?.vm_event_count ?? 0), label: 'VM STOP / START', sub: 'VM state and QEMU events', subColor: 'text-sky-300', bar: 'bg-sky-500' },
+            { Icon: AlertTriangle, val: String(stats?.memory_event_count ?? 0), label: 'OOM / MEMORY', sub: 'Host memory, swap, VM killed', subColor: 'text-red-300', bar: 'bg-red-600', valColor: 'text-red-400' },
+            { Icon: RefreshCw,     val: String(stats?.backup_event_count ?? 0), label: 'BACKUP EVENTS', sub: 'Backup jobs and stopped VMs', subColor: 'text-indigo-300', bar: 'bg-indigo-500' },
+            { Icon: Activity,      val: (stats?.total_events ?? 0).toLocaleString(), label: 'TOTAL EVENTS', sub: `${stats?.critical_events ?? 0} critical`, subColor: 'text-red-400',   bar: 'bg-gray-500' },
           ].map(c => (
             <div key={c.label} className={`${CARD_BG} rounded-xl p-4 relative overflow-hidden`}>
               <c.Icon size={18} className="text-gray-400 mb-3" />
