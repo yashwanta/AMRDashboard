@@ -62,7 +62,8 @@ sudo APP_PORT=8088 API_PORT=18080 bash scripts/install-ubuntu-containers.sh
 sudo systemctl status robowatch
 ```
 
-More details: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+Step-by-step install guide: [INSTALL.md](INSTALL.md)  
+More deployment details: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 
 ---
 
