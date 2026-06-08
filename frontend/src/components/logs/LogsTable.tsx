@@ -263,7 +263,7 @@ export default function LogsTable({ events, loading }: Props) {
                 <td className="py-2.5 overflow-hidden">
                   {showRawSummary
                     ? <span className="block truncate text-xs font-mono text-gray-300">{cleanMessage(ev.message)}</span>
-                    : <span className="block truncate text-gray-700">{friendlySummary(ev)}</span>
+                    : <span className="block truncate text-gray-100 font-medium">{friendlySummary(ev)}</span>
                   }
                 </td>
               </tr>,
@@ -326,12 +326,12 @@ export default function LogsTable({ events, loading }: Props) {
                         <div className="mt-2 bg-gray-900 border border-gray-700 rounded-lg overflow-hidden">
                           <table className="w-full text-xs">
                             <tbody className="divide-y divide-gray-700/50">
-                              <tr><td className="px-3 py-2 font-medium text-gray-400 w-28">Time</td><td className="px-3 py-2 font-mono text-gray-700">{safeFormat(ev.timestamp, 'MMM d, yyyy h:mm:ss a')}</td></tr>
-                              <tr><td className="px-3 py-2 font-medium text-gray-400">Server</td><td className="px-3 py-2 text-gray-700">{ev.server_name}</td></tr>
-                              {parsed?.host    && <tr><td className="px-3 py-2 font-medium text-gray-400">Hostname</td><td className="px-3 py-2 font-mono text-gray-700">{parsed.host}</td></tr>}
-                              {parsed?.process && <tr><td className="px-3 py-2 font-medium text-gray-400">Process</td><td className="px-3 py-2 font-mono text-gray-700">{parsed.process}</td></tr>}
-                              <tr><td className="px-3 py-2 font-medium text-gray-400">Source</td><td className="px-3 py-2 text-gray-700">{sourceFriendly[ev.source] ?? ev.source}</td></tr>
-                              <tr><td className="px-3 py-2 font-medium text-gray-400 align-top">Raw log</td><td className="px-3 py-2 font-mono text-gray-400 break-all whitespace-pre-wrap text-xs">{parsed?.body ?? ev.message}</td></tr>
+                              <tr><td className="px-3 py-2 font-medium text-gray-400 w-28">Time</td><td className="px-3 py-2 font-mono text-gray-200">{safeFormat(ev.timestamp, 'MMM d, yyyy h:mm:ss a')}</td></tr>
+                              <tr><td className="px-3 py-2 font-medium text-gray-400">Server</td><td className="px-3 py-2 text-gray-200">{ev.server_name}</td></tr>
+                              {parsed?.host    && <tr><td className="px-3 py-2 font-medium text-gray-400">Hostname</td><td className="px-3 py-2 font-mono text-gray-200">{parsed.host}</td></tr>}
+                              {parsed?.process && <tr><td className="px-3 py-2 font-medium text-gray-400">Process</td><td className="px-3 py-2 font-mono text-gray-200">{parsed.process}</td></tr>}
+                              <tr><td className="px-3 py-2 font-medium text-gray-400">Source</td><td className="px-3 py-2 text-gray-200">{sourceFriendly[ev.source] ?? ev.source}</td></tr>
+                              <tr><td className="px-3 py-2 font-medium text-gray-400 align-top">Raw log</td><td className="px-3 py-2 font-mono text-gray-400 break-all whitespace-pre-wrap text-xs text-gray-200">{parsed?.body ?? ev.message}</td></tr>
                             </tbody>
                           </table>
                         </div>
