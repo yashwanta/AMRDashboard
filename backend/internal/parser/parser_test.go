@@ -1,6 +1,11 @@
 package parser
 
-import "testing"
+import (
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+)
 
 func TestParseLineLogReviewCategories(t *testing.T) {
 	tests := []struct {
@@ -126,5 +131,53 @@ func TestParseLineClassifiesProxmoxOOM(t *testing.T) {
 				t.Fatalf("event type = %q, want %q", ev.EventType, tt.eventType)
 			}
 		})
+	}
+}
+
+func TestParseLineParsesProxmoxOffsetTimestamp(t *testing.T) {
+	ev := ParseLine("2026-06-05T22:06:01-0500 pve kernel: oom-kill:task_memcg=/qemu.slice/113.scope,task=kvm,pid=2915632", "proxmox_journal", 7)
+	if ev == nil {
+		t.Fatal("expected event, got nil")
+	}
+	want := time.Date(2026, 6, 6, 3, 6, 1, 0, time.UTC)
+	if !ev.Timestamp.Equal(want) {
+		t.Fatalf("timestamp = %s, want %s", ev.Timestamp, want)
+	}
+	if ev.EventType != "vm_killed_by_oom" {
+		t.Fatalf("event type = %q, want vm_killed_by_oom", ev.EventType)
+	}
+}
+
+func TestParseLineSkipsRootHistorySearchCommands(t *testing.T) {
+	ev := ParseLine(`/root/.bash_history:498:journalctl --since "2026-06-05 22:05:30" --until "2026-06-05 22:06:30" --no-pager | egrep -i "oom|out of memory|killed process|113.scope|qemu.slice|kvm"`, "proxmox_root_history@10.222.10.50", 7)
+	if ev != nil {
+		t.Fatalf("expected root history search command to be skipped, got %q", ev.EventType)
+	}
+}
+
+func TestParseLineSkipsCollectionCommandContinuation(t *testing.T) {
+	ev := ParseLine(`2026-06-08T07:25:53-05:00 host sudo[322080]: fleetmanager : (command continued) "shutdown|reboot|oom|out of memory|killed process"`, "journald_amr", 7)
+	if ev != nil {
+		t.Fatalf("expected collection command continuation to be skipped, got %q", ev.EventType)
+	}
+}
+
+func TestParseOutputCapsUnknownEvents(t *testing.T) {
+	var lines []string
+	for i := 0; i < 150; i++ {
+		lines = append(lines, "2026-06-08T12:00:00Z pve process informational line")
+	}
+	events := ParseOutput(strings.Join(lines, "\n"), "proxmox_journal", 7)
+	if len(events) != 1 {
+		t.Fatalf("dedupe should collapse identical unknown events to 1, got %d", len(events))
+	}
+
+	lines = lines[:0]
+	for i := 0; i < 150; i++ {
+		lines = append(lines, "2026-06-08T12:00:00Z pve process informational line "+strconv.Itoa(i))
+	}
+	events = ParseOutput(strings.Join(lines, "\n"), "proxmox_journal", 7)
+	if len(events) != 100 {
+		t.Fatalf("unknown event cap = %d, want 100", len(events))
 	}
 }

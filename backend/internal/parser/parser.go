@@ -145,10 +145,16 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 	if strings.Contains(line, "TTY=tty") && strings.Contains(line, "COMMAND=") {
 		return nil
 	}
+	if strings.Contains(line, "(command continued)") {
+		return nil
+	}
+	if strings.Contains(source, "root_history") && hasAny(strings.ToLower(line), "grep ", "egrep ", "journalctl ", "zgrep ") {
+		return nil
+	}
 
 	ts := extractTimestamp(line)
 	matchLine := strings.ToLower(line)
-	if strings.HasPrefix(source, "proxmox") && hasAny(matchLine, "oom", "out of memory", "killed process", "oom-killer", "oom-kill") {
+	if strings.HasPrefix(source, "proxmox") && !strings.Contains(source, "root_history") && hasAny(matchLine, "oom", "out of memory", "killed process", "oom-killer", "oom-kill") {
 		if hasAny(matchLine, "qemu", "kvm", "qemu.slice", ".scope", "vm ") {
 			return newEvent(serverID, ts, "vm_killed_by_oom", "critical", line, source)
 		}
@@ -198,11 +204,18 @@ func newEvent(serverID int, ts time.Time, eventType, severity, line, source stri
 func ParseOutput(output, source string, serverID int) []models.LogEvent {
 	var events []models.LogEvent
 	seen := make(map[string]bool)
+	unknownCount := 0
 
 	for _, line := range strings.Split(output, "\n") {
 		ev := ParseLine(line, source, serverID)
 		if ev == nil {
 			continue
+		}
+		if ev.EventType == "unknown" {
+			unknownCount++
+			if unknownCount > 100 {
+				continue
+			}
 		}
 		key := ev.EventType + ev.Message
 		if seen[key] {
@@ -218,6 +231,7 @@ var isoFormats = []string{
 	time.RFC3339Nano,
 	time.RFC3339,
 	"2006-01-02T15:04:05.000000-0700",
+	"2006-01-02T15:04:05-0700",
 	"2006-01-02T15:04:05+0000",
 	"2006-01-02 15:04:05",
 }

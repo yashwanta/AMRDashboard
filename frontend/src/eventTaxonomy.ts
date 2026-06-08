@@ -112,5 +112,7 @@ export function eventLabel(eventType: LogEvent['event_type'] | string) {
 }
 
 export function sourceLabel(source: string) {
-  return SOURCE_OPTIONS.find(s => s.value === source)?.label ?? source
+  const [base, host] = source.split('@')
+  const label = SOURCE_OPTIONS.find(s => s.value === base)?.label ?? base
+  return host ? `${label} on ${host}` : label
 }

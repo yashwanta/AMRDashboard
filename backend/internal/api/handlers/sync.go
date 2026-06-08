@@ -51,7 +51,7 @@ func (h *SyncHandler) SyncServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jobID, err := h.runSync(r.Context(), id)
+	jobID, err := h.runSync(context.Background(), id)
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -185,7 +185,7 @@ func (h *SyncHandler) DeepSync(w http.ResponseWriter, r *http.Request) {
 			since = t
 		}
 	}
-	jobID, err := h.runSyncFrom(r.Context(), id, since)
+	jobID, err := h.runSyncFrom(context.Background(), id, since)
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -265,23 +265,29 @@ func (h *SyncHandler) collectAndStore(ctx context.Context, serverID int, s syncS
 		return 0, err
 	}
 
-	if includeProxmox && s.proxmoxHost != "" && s.proxmoxUsername != "" {
-		proxPass, proxKey := h.decryptPair(s.proxmoxPasswordEnc, s.proxmoxKeyEnc)
-		proxClient, err := sshclient.Connect(sshclient.Config{
-			Host:       s.proxmoxHost,
-			Port:       s.proxmoxPort,
-			Username:   s.proxmoxUsername,
-			AuthType:   s.proxmoxAuthType,
-			Password:   proxPass,
-			PrivateKey: proxKey,
-		})
-		if err == nil {
-			defer proxClient.Close()
-			for source, output := range proxClient.FetchProxmoxLogs(since, s.vmid) {
-				logMap[source] = output
+	if includeProxmox {
+		for _, prox := range h.proxmoxTargets(ctx, serverID, s) {
+			proxPass, proxKey := h.decryptPair(prox.proxmoxPasswordEnc, prox.proxmoxKeyEnc)
+			proxClient, err := sshclient.Connect(sshclient.Config{
+				Host:       prox.proxmoxHost,
+				Port:       prox.proxmoxPort,
+				Username:   prox.proxmoxUsername,
+				AuthType:   prox.proxmoxAuthType,
+				Password:   proxPass,
+				PrivateKey: proxKey,
+			})
+			if err == nil {
+				for source, output := range proxClient.FetchProxmoxLogs(since, prox.vmid) {
+					key := source
+					if prox.proxmoxHost != "" {
+						key = source + "@" + prox.proxmoxHost
+					}
+					logMap[key] = output
+				}
+				proxClient.Close()
+			} else {
+				logMap["proxmox_connection@"+prox.proxmoxHost] = fmt.Sprintf("%s proxmox ssh %s: %v", time.Now().UTC().Format(time.RFC3339), prox.proxmoxHost, err)
 			}
-		} else {
-			logMap["proxmox_connection"] = fmt.Sprintf("%s proxmox ssh: %v", time.Now().UTC().Format(time.RFC3339), err)
 		}
 	}
 
@@ -298,6 +304,44 @@ func (h *SyncHandler) collectAndStore(ctx context.Context, serverID int, s syncS
 		}
 	}
 	return total, nil
+}
+
+func (h *SyncHandler) proxmoxTargets(ctx context.Context, selectedServerID int, selected syncServerRow) []syncServerRow {
+	if selected.proxmoxHost != "" && selected.proxmoxUsername != "" {
+		return []syncServerRow{selected}
+	}
+
+	rows, err := h.db.Query(ctx, `
+		SELECT host, port, username, auth_type, COALESCE(password_enc,''), COALESCE(private_key_enc,'')
+		FROM servers
+		WHERE id <> $1
+		  AND (
+			LOWER(name) LIKE '%pve%'
+			OR LOWER(name) LIKE '%proxmox%'
+			OR LOWER(host) LIKE '%pve%'
+		  )
+		ORDER BY name`, selectedServerID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var targets []syncServerRow
+	for rows.Next() {
+		var t syncServerRow
+		if err := rows.Scan(&t.proxmoxHost, &t.proxmoxPort, &t.proxmoxUsername, &t.proxmoxAuthType, &t.proxmoxPasswordEnc, &t.proxmoxKeyEnc); err != nil {
+			continue
+		}
+		if t.proxmoxPort == 0 {
+			t.proxmoxPort = 22
+		}
+		if t.proxmoxAuthType == "" {
+			t.proxmoxAuthType = "password"
+		}
+		t.vmid = selected.vmid
+		targets = append(targets, t)
+	}
+	return targets
 }
 
 func (h *SyncHandler) decryptPair(passwordEnc, keyEnc string) (string, string) {
