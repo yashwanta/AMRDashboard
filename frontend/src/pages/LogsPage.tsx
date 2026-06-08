@@ -47,6 +47,7 @@ export default function LogsPage() {
     proxmox_host: searchParams.get('proxmox_host') ?? undefined,
     vmid: searchParams.get('vmid') ?? undefined,
     event_type: searchParams.get('event_type') ?? undefined,
+    event_types: searchParams.get('event_types') ?? undefined,
     server_id: searchParams.get('server_id') ? Number(searchParams.get('server_id')) : undefined,
   }))
 
@@ -172,7 +173,7 @@ export default function LogsPage() {
                 </button>
               ))}
             </div>
-            {(fromDate || toDate || keyword || filters.source || filters.event_type || filters.severity || filters.server_id) && (
+            {(fromDate || toDate || keyword || filters.source || filters.event_type || filters.event_types || filters.severity || filters.server_id) && (
               <button onClick={() => {
                 setFromDate('')
                 setToDate('')

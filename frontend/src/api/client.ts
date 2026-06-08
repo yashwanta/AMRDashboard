@@ -20,6 +20,7 @@ export const testConnection = (data: ServerRequest) =>
 export interface LogFilters {
   server_id?: number
   event_type?: string
+  event_types?: string
   severity?: string
   source?: string
   proxmox_host?: string

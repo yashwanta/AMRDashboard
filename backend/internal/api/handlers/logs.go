@@ -43,6 +43,21 @@ func (h *LogHandler) List(w http.ResponseWriter, r *http.Request) {
 		args = append(args, et)
 		argN++
 	}
+	if eventTypes := q.Get("event_types"); eventTypes != "" {
+		var placeholders []string
+		for _, et := range strings.Split(eventTypes, ",") {
+			et = strings.TrimSpace(et)
+			if et == "" {
+				continue
+			}
+			placeholders = append(placeholders, "$"+strconv.Itoa(argN))
+			args = append(args, et)
+			argN++
+		}
+		if len(placeholders) > 0 {
+			where += " AND le.event_type IN (" + strings.Join(placeholders, ",") + ")"
+		}
+	}
 	if sev := q.Get("severity"); sev != "" {
 		where += " AND le.severity=$" + strconv.Itoa(argN)
 		args = append(args, sev)
