@@ -25,7 +25,24 @@ export interface LogEvent {
   server_id: number
   server_name: string
   timestamp: string
-  event_type: 'crash' | 'power_off' | 'error' | 'warning' | 'info' | 'robot_offline' | 'robot_online' | 'disk_error' | 'update'
+  event_type:
+    | 'robot_offline'
+    | 'ubuntu_server_shutdown'
+    | 'ubuntu_server_reboot'
+    | 'proxmox_host_shutdown'
+    | 'proxmox_host_reboot'
+    | 'vm_shutdown'
+    | 'vm_reboot'
+    | 'power_network_event'
+    | 'unknown'
+    | 'crash'
+    | 'power_off'
+    | 'error'
+    | 'warning'
+    | 'info'
+    | 'robot_online'
+    | 'disk_error'
+    | 'update'
   severity: 'critical' | 'high' | 'medium' | 'low' | 'info'
   message: string
   source: string

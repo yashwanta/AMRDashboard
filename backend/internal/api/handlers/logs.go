@@ -46,6 +46,16 @@ func (h *LogHandler) List(w http.ResponseWriter, r *http.Request) {
 		args = append(args, sev)
 		argN++
 	}
+	if source := q.Get("source"); source != "" {
+		where += " AND le.source=$" + strconv.Itoa(argN)
+		args = append(args, source)
+		argN++
+	}
+	if search := q.Get("q"); search != "" {
+		where += " AND (le.message ILIKE $" + strconv.Itoa(argN) + " OR le.source ILIKE $" + strconv.Itoa(argN) + " OR s.name ILIKE $" + strconv.Itoa(argN) + ")"
+		args = append(args, "%"+search+"%")
+		argN++
+	}
 	if from := q.Get("from"); from != "" {
 		where += " AND le.timestamp >= $" + strconv.Itoa(argN)
 		args = append(args, from)
@@ -97,7 +107,7 @@ func (h *LogHandler) Stats(w http.ResponseWriter, r *http.Request) {
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events`).Scan(&stats.TotalEvents)
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE severity IN ('critical','high')`).Scan(&stats.CriticalEvents)
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='crash'`).Scan(&stats.CrashCount)
-	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='power_off'`).Scan(&stats.PowerOffCount)
+	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type IN ('power_off','ubuntu_server_shutdown','ubuntu_server_reboot','proxmox_host_shutdown','proxmox_host_reboot','vm_shutdown','vm_reboot','power_network_event')`).Scan(&stats.PowerOffCount)
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='error'`).Scan(&stats.ErrorCount)
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='robot_offline'`).Scan(&stats.RobotOfflineCount)
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='robot_online'`).Scan(&stats.RobotOnlineCount)
@@ -189,15 +199,15 @@ func (h *LogHandler) ServerStats(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type ServerStat struct {
-		ID          int    `json:"id"`
-		Name        string `json:"name"`
-		Status      string `json:"status"`
-		RobotOffline int   `json:"robot_offline"`
-		RobotOnline  int   `json:"robot_online"`
-		Crashes      int   `json:"crashes"`
-		DiskErrors   int   `json:"disk_errors"`
-		Errors       int   `json:"errors"`
-		Critical     int   `json:"critical"`
+		ID           int    `json:"id"`
+		Name         string `json:"name"`
+		Status       string `json:"status"`
+		RobotOffline int    `json:"robot_offline"`
+		RobotOnline  int    `json:"robot_online"`
+		Crashes      int    `json:"crashes"`
+		DiskErrors   int    `json:"disk_errors"`
+		Errors       int    `json:"errors"`
+		Critical     int    `json:"critical"`
 	}
 
 	var results []ServerStat
