@@ -64,9 +64,17 @@ func (h *LogHandler) List(w http.ResponseWriter, r *http.Request) {
 		argN++
 	}
 	if search := q.Get("q"); search != "" {
-		where += " AND (le.message ILIKE $" + strconv.Itoa(argN) + " OR le.source ILIKE $" + strconv.Itoa(argN) + " OR s.name ILIKE $" + strconv.Itoa(argN) + ")"
-		args = append(args, "%"+search+"%")
-		argN++
+		terms := strings.Fields(search)
+		if len(terms) == 0 {
+			terms = []string{search}
+		}
+		var termClauses []string
+		for _, term := range terms {
+			termClauses = append(termClauses, "(le.message ILIKE $"+strconv.Itoa(argN)+" OR le.source ILIKE $"+strconv.Itoa(argN)+" OR s.name ILIKE $"+strconv.Itoa(argN)+")")
+			args = append(args, "%"+term+"%")
+			argN++
+		}
+		where += " AND (" + strings.Join(termClauses, " OR ") + ")"
 	}
 	if from := q.Get("from"); from != "" {
 		where += " AND le.timestamp >= $" + strconv.Itoa(argN)

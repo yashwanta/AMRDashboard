@@ -148,6 +148,12 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 
 	ts := extractTimestamp(line)
 	matchLine := strings.ToLower(line)
+	if strings.HasPrefix(source, "proxmox") && hasAny(matchLine, "oom", "out of memory", "killed process", "oom-killer", "oom-kill") {
+		if hasAny(matchLine, "qemu", "kvm", "qemu.slice", ".scope", "vm ") {
+			return newEvent(serverID, ts, "vm_killed_by_oom", "critical", line, source)
+		}
+		return newEvent(serverID, ts, "host_memory_exhaustion", "critical", line, source)
+	}
 
 	for _, r := range rules {
 		if shutdownRebootTypes[r.eventType] && rebootSkipSources[source] {
@@ -162,6 +168,15 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 	}
 
 	return newEvent(serverID, ts, "unknown", "low", line, source)
+}
+
+func hasAny(s string, needles ...string) bool {
+	for _, needle := range needles {
+		if strings.Contains(s, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func newEvent(serverID int, ts time.Time, eventType, severity, line, source string) *models.LogEvent {

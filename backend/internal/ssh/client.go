@@ -155,14 +155,14 @@ func (c *Client) FetchLogs(since time.Time, appLogPaths string) (map[string]stri
 
 	// -- syslog fallback
 	run("syslog", fmt.Sprintf(
-		"grep -a '' /var/log/syslog 2>/dev/null | awk -v s=%q '$0>=s' | tail -n 5000 || true",
+		"journalctl --since %q --no-pager -o short-iso 2>/dev/null | grep -Ei 'shutdown|reboot|power|halt|stopped|stopping|failed|failure|error|critical|panic|segfault|oom|out of memory|killed process|watchdog|thermal|acpi|sigterm|sigkill|mysql|postgres|nginx|docker|containerd|fleet|roboshop|rds|seer|robod|java' || true",
 		sinceStr))
 
 	// -- kern.log
-	run("kern.log", "tail -n 5000 /var/log/kern.log 2>/dev/null || true")
+	run("kern.log", "zgrep -hEi 'oom|out of memory|killed process|panic|segfault|watchdog|I/O error|EXT4|XFS|BTRFS|MCE|NMI|link is down|link is up|failed|error' /var/log/kern.log* 2>/dev/null | tail -n 5000 || true")
 
 	// -- auth.log
-	run("auth.log", "tail -n 2000 /var/log/auth.log 2>/dev/null || true")
+	run("auth.log", "zgrep -hEi 'sshd|accepted password|accepted publickey|failed password|session opened|session closed|sudo:' /var/log/auth.log* 2>/dev/null | tail -n 2000 || true")
 
 	// -- system info snapshot
 	run("system_info",
@@ -170,6 +170,8 @@ func (c *Client) FetchLogs(since time.Time, appLogPaths string) (map[string]stri
 			" echo '=df='; df -h;"+
 			" echo '=free='; free -h;"+
 			" echo '=services_failed='; systemctl list-units --type=service --state=failed 2>/dev/null || true;"+
+			" echo '=journal_boots='; journalctl --list-boots --no-pager 2>/dev/null || true;"+
+			" echo '=shutdown_history='; last -x -F 2>/dev/null | egrep -i 'shutdown|reboot|runlevel|crash' | head -n 50 || true;"+
 			" echo '=last_reboot='; last reboot | head -n 5;"+
 			" echo '=coredumps='; coredumpctl list 2>/dev/null | tail -n 20 || true")
 
@@ -196,25 +198,48 @@ func (c *Client) FetchProxmoxLogs(since time.Time, vmid string) map[string]strin
 		}
 	}
 
+	vmExpr := "[0-9]+"
+	vmLoop := "for id in $(qm list 2>/dev/null | awk 'NR>1 {print $1}'); do"
+	if strings.TrimSpace(vmid) != "" {
+		vmExpr = strings.TrimSpace(vmid)
+		vmLoop = fmt.Sprintf("for id in %q; do", vmExpr)
+	}
+
 	pveGrep := "qemu|kvm|qm |vm |VM |oom|out of memory|killed process|memory|swap|backup|vzdump|pbs|ha-manager|pve-ha|shutdown|reboot|stopped|started|task|disk|smart|zfs|network|dhcp|link is down|link is up|failed|error"
+	vmGrep := fmt.Sprintf("UPID.*:%s:|qemu/%s|VM %s|vm:%s|status/(stop|shutdown|start|reset)|qm(stop|shutdown|start|reset):%s|qm (stop|shutdown|start|reset) %s|vzdump:%s|backup|vzdump|lock|qmp|agent|freeze|thaw|oom|out of memory|killed process|%s.scope|qemu.slice|kvm", vmExpr, vmExpr, vmExpr, vmExpr, vmExpr, vmExpr, vmExpr, vmExpr)
 
 	run("proxmox_journal", fmt.Sprintf(
 		"journalctl --since %q --no-pager -o short-iso 2>/dev/null | grep -Ei %q || true",
 		sinceStr, pveGrep))
 	run("proxmox_syslog", fmt.Sprintf(
-		"grep -aEi %q /var/log/syslog /var/log/messages 2>/dev/null | tail -n 8000 || true",
+		"zgrep -hEi %q /var/log/syslog* /var/log/messages* /var/log/daemon.log* /var/log/pvedaemon.log* 2>/dev/null | tail -n 12000 || true",
 		pveGrep))
-	run("proxmox_tasks", "find /var/log/pve/tasks -type f -mmin -10080 -print0 2>/dev/null | xargs -0 grep -HinEi 'qm|qemu|vzdump|backup|ha|shutdown|reboot|start|stop|error|failed|OK' 2>/dev/null || true")
-	run("proxmox_api_proxy", "grep -aEi 'POST|PUT|DELETE|qm|qemu|vzdump|backup|login|auth|error|failed' /var/log/pveproxy/access.log /var/log/pveproxy/*.log 2>/dev/null | tail -n 4000 || true")
-	run("proxmox_ha", "grep -aEi 'ha|lrm|crm|migrate|fence|recover|started|stopped|error|failed' /var/log/pve-ha-* /var/log/syslog 2>/dev/null | tail -n 4000 || true")
-	run("proxmox_backup", "grep -aEi 'vzdump|backup|pbs|snapshot|VM is locked|not running|stopped|failed|error|OK' /var/log/vzdump/*.log /var/log/syslog 2>/dev/null | tail -n 5000 || true")
-	run("proxmox_host_memory", "echo '=free='; free -h; echo '=swapon='; swapon --show; echo '=top_mem='; ps aux --sort=-%mem | head -n 20; echo '=dmesg_oom='; dmesg -T 2>/dev/null | grep -Ei 'oom|out of memory|killed process|swap|memory allocation failure' | tail -n 100 || true")
+	run("proxmox_tasks", fmt.Sprintf(
+		"grep -RniE %q /var/log/pve/tasks /var/log/pveproxy/access.log* /var/log/pvedaemon.log* /var/log/syslog* /var/log/daemon.log* 2>/dev/null | tail -n 12000 || true",
+		vmGrep))
+	run("proxmox_api_proxy", fmt.Sprintf(
+		"zgrep -hEi %q /var/log/pveproxy/access.log* /var/log/pvedaemon.log* 2>/dev/null | tail -n 8000 || true",
+		vmGrep+"|POST|PUT|DELETE|API2|root@pam|login|auth"))
+	run("proxmox_ha", fmt.Sprintf(
+		"zgrep -hEi %q /var/log/syslog* /var/log/daemon.log* /var/log/pve-ha-* 2>/dev/null | tail -n 6000 || true",
+		fmt.Sprintf("vm:%s|%s|ha-manager|lrm|crm|fence|recovery|migrate|error|failed", vmExpr, vmExpr)))
+	run("proxmox_backup", fmt.Sprintf(
+		"zgrep -hEi %q /var/log/vzdump/*.log /var/log/pve/tasks/*/* /var/log/syslog* /var/log/daemon.log* 2>/dev/null | tail -n 10000 || true",
+		fmt.Sprintf("vzdump:%s|backup|pbs|snapshot|VM is locked|not running|stopped|failed|error|OK|%s", vmExpr, vmExpr)))
+	run("proxmox_qemu", fmt.Sprintf(
+		"{ %s echo \"===== VM $id STATUS =====\"; qm status \"$id\" 2>/dev/null || true; echo \"===== VM $id CONFIG =====\"; qm config \"$id\" 2>/dev/null || true; echo \"===== VM $id QEMU LOG =====\"; cat \"/var/log/pve/qemu-server/$id.log\" 2>/dev/null | tail -n 500 || true; done; } | grep -Ei %q || true",
+		vmLoop, "name:|memory:|balloon:|status:|oom|out of memory|killed|shutdown|stop|start|reset|error|failed|qmp|agent"))
+	run("proxmox_vm_status", fmt.Sprintf(
+		"echo '=qm_list='; qm list 2>/dev/null || true; %s echo \"----- VM $id -----\"; qm status \"$id\" 2>/dev/null || true; qm config \"$id\" 2>/dev/null | grep -Ei 'name:|memory:|balloon:|cores:|sockets:' || true; done",
+		vmLoop))
+	run("proxmox_root_history", fmt.Sprintf(
+		"grep -RniE %q /root/.*history /home/*/.*history 2>/dev/null | tail -n 200 || true",
+		fmt.Sprintf("qm (stop|shutdown|reset|start|set) %s|qemu/%s|%s|memory|balloon", vmExpr, vmExpr, vmExpr)))
+	run("proxmox_host_memory", fmt.Sprintf(
+		"echo '=free='; free -h; echo '=swapon='; swapon --show; echo '=vm_memory_config='; %s echo \"----- VM $id -----\"; qm config \"$id\" 2>/dev/null | grep -Ei 'name:|memory:|balloon:' || true; done; echo '=current_vm_rss='; for id in $(qm list 2>/dev/null | awk 'NR>1 && $3==\"running\" {print $1}'); do pid=$(cat /var/run/qemu-server/$id.pid 2>/dev/null); name=$(qm config \"$id\" 2>/dev/null | awk -F': ' '/^name:/ {print $2}'); mem=$(qm config \"$id\" 2>/dev/null | awk -F': ' '/^memory:/ {print $2}'); if [ -n \"$pid\" ]; then rss_kb=$(ps -o rss= -p \"$pid\" | awk '{print $1}'); rss_gb=$(awk \"BEGIN {printf \\\"%%.2f\\\", $rss_kb/1024/1024}\"); echo \"VMID=$id NAME=$name PID=$pid RSS_GB=$rss_gb CONFIG_MB=$mem\"; fi; done; echo '=top_mem='; ps -eo pid,user,%%mem,rss,vsz,cmd --sort=-rss | head -n 25; echo '=journal_oom='; journalctl --since %q --no-pager 2>/dev/null | grep -Ei 'oom|out of memory|killed process|qemu.slice|kvm|[0-9]+.scope' | tail -n 300 || true",
+		vmLoop, sinceStr))
 	run("proxmox_storage", "echo '=df='; df -h; echo '=zpool='; zpool status 2>/dev/null || true; echo '=smart='; for d in /dev/sd? /dev/nvme?n?; do smartctl -H $d 2>/dev/null; done")
-
-	if strings.TrimSpace(vmid) != "" {
-		run("proxmox_vm_status", fmt.Sprintf("echo '=qm_status='; qm status %q 2>/dev/null || true; echo '=qm_config='; qm config %q 2>/dev/null || true", vmid, vmid))
-		run("proxmox_qemu", fmt.Sprintf("grep -aEi '(%s|vm %s|VM %s|qemu.%s|kvm.*%s|oom|killed|shutdown|reboot|stopped|started|backup|failed|error)' /var/log/syslog /var/log/pve/tasks/*/* /var/log/vzdump/*.log 2>/dev/null | tail -n 8000 || true", vmid, vmid, vmid, vmid, vmid))
-	}
+	run("proxmox_boot_history", "echo '=boots='; journalctl --list-boots --no-pager 2>/dev/null || true; echo '=shutdown_history='; last -x -F 2>/dev/null | egrep -i 'shutdown|reboot|runlevel|crash' | head -n 50 || true")
 
 	return logs
 }

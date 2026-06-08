@@ -97,3 +97,34 @@ func TestParseLineSkipsHistoricalRebootOutput(t *testing.T) {
 		t.Fatalf("expected historical reboot output to be skipped, got %q", ev.EventType)
 	}
 }
+
+func TestParseLineClassifiesProxmoxOOM(t *testing.T) {
+	tests := []struct {
+		name      string
+		line      string
+		eventType string
+	}{
+		{
+			name:      "qemu scope killed",
+			line:      "Jun  5 22:06:01 pve kernel: Out of memory: Killed process 12345 (kvm) total-vm:17500000kB task_memcg:/qemu.slice/113.scope",
+			eventType: "vm_killed_by_oom",
+		},
+		{
+			name:      "host oom",
+			line:      "Jun  5 22:05:59 pve kernel: node invoked oom-killer: gfp_mask=0x140cca",
+			eventType: "host_memory_exhaustion",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ev := ParseLine(tt.line, "proxmox_host_memory", 7)
+			if ev == nil {
+				t.Fatal("expected event, got nil")
+			}
+			if ev.EventType != tt.eventType {
+				t.Fatalf("event type = %q, want %q", ev.EventType, tt.eventType)
+			}
+		})
+	}
+}

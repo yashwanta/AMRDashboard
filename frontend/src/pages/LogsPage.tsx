@@ -18,7 +18,7 @@ const DATE_SHORTCUTS = [
 const inputCls = 'text-xs bg-gray-900 border border-gray-600 text-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-blue-500'
 
 const QUICK_FILTERS = [
-  { label: 'Out of Memory', event_type: 'host_memory_exhaustion', q: 'oom out of memory' },
+  { label: 'Out of Memory', event_type: '', q: 'oom out memory killed qemu kvm' },
   { label: 'VM Killed', event_type: 'vm_killed_by_oom', q: 'killed process' },
   { label: 'Server Reboot', event_type: 'ubuntu_server_reboot', q: 'reboot' },
   { label: 'Server Shutdown', event_type: 'ubuntu_server_shutdown', q: 'shutdown' },
@@ -190,7 +190,7 @@ export default function LogsPage() {
             {QUICK_FILTERS.map(f => (
               <button key={f.label} onClick={() => {
                 setKeyword(f.q)
-                set('event_type', f.event_type)
+                set('event_type', f.event_type || undefined)
               }} className="text-xs px-2.5 py-1 rounded-md border border-gray-600 text-gray-400 hover:bg-gray-700 hover:text-gray-200">
                 {f.label}
               </button>
