@@ -21,6 +21,8 @@ export interface LogFilters {
   server_id?: number
   event_type?: string
   severity?: string
+  source?: string
+  q?: string
   from?: string
   to?: string
   limit?: number
