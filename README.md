@@ -33,6 +33,39 @@ docker compose up -d
 
 ---
 
+## Build Container Images
+
+```bash
+bash scripts/build-container-images.sh
+```
+
+Optional custom tags:
+
+```bash
+BACKEND_IMAGE=robowatch-backend:1.0 FRONTEND_IMAGE=robowatch-frontend:1.0 bash scripts/build-container-images.sh
+```
+
+## Ubuntu Installer
+
+For a full Ubuntu install with systemd restart support:
+
+```bash
+sudo bash scripts/install-ubuntu-containers.sh
+```
+
+The installer uses Podman if available, Docker if available, and installs Podman if neither runtime exists.
+
+Useful options:
+
+```bash
+sudo APP_PORT=8088 API_PORT=18080 bash scripts/install-ubuntu-containers.sh
+sudo systemctl status robowatch
+```
+
+More details: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+
+---
+
 ## Development Setup
 
 ### Prerequisites
