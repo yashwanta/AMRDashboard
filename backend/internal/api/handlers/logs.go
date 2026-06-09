@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -126,12 +127,206 @@ func (h *LogHandler) List(w http.ResponseWriter, r *http.Request) {
 			&e.EventType, &e.Severity, &e.Message, &e.Source, &e.CreatedAt); err != nil {
 			continue
 		}
+		if shouldAnalyzeOOMRow(e) {
+			e.OOMAnalysis = h.analyzeLogEventOOM(r.Context(), e)
+		}
 		events = append(events, e)
 	}
 	if events == nil {
 		events = []models.LogEvent{}
 	}
 	jsonOK(w, events)
+}
+
+func shouldAnalyzeOOMRow(ev models.LogEvent) bool {
+	msg := strings.ToLower(ev.Message)
+	return ev.EventType == "vm_killed_by_oom" ||
+		ev.EventType == "host_memory_exhaustion" ||
+		strings.Contains(msg, "out of memory") ||
+		strings.Contains(msg, "oom-kill") ||
+		strings.Contains(msg, "killed process")
+}
+
+func (h *LogHandler) analyzeLogEventOOM(ctx context.Context, ev models.LogEvent) *models.OOMAnalysis {
+	hostHints := h.oomHostHints(ctx, ev)
+	evidence := []models.IncidentEvidence{{
+		Timestamp: ev.Timestamp,
+		EventType: ev.EventType,
+		Severity:  ev.Severity,
+		Source:    ev.Source,
+		Message:   ev.Message,
+	}}
+
+	sourceClauses, sourceArgs, nextArg := sourceLikeClause("source", sourceLikePatterns(hostHints), 4)
+	windowArgs := []any{ev.Timestamp.Add(-2 * time.Second), ev.Timestamp.Add(2 * time.Second), ev.ServerID}
+	windowArgs = append(windowArgs, sourceArgs...)
+
+	windowRows, err := h.db.Query(ctx, `
+		SELECT timestamp, event_type, severity, source, message
+		FROM log_events
+		WHERE timestamp >= $1
+		  AND timestamp <= $2
+		  AND (
+			server_id=$3
+			OR `+sourceClauses+`
+		  )
+		  AND (
+			event_type IN ('vm_killed_by_oom','host_memory_exhaustion','swap_full','vm_stopped','vm_started')
+			OR message ILIKE '%qemu.slice%'
+			OR message ILIKE '%killed process%'
+			OR message ILIKE '%oom%'
+		  )
+		ORDER BY timestamp ASC
+		LIMIT $`+strconv.Itoa(nextArg), append(windowArgs, 80)...)
+	if err == nil {
+		defer windowRows.Close()
+		for windowRows.Next() {
+			var item models.IncidentEvidence
+			if scanErr := windowRows.Scan(&item.Timestamp, &item.EventType, &item.Severity, &item.Source, &item.Message); scanErr == nil {
+				evidence = append(evidence, item)
+			}
+		}
+	}
+
+	prelim := analyzeOOM(evidence)
+	var killedPID, killedVMID string
+	if prelim != nil {
+		killedPID = prelim.KilledPID
+		killedVMID = prelim.KilledVMID
+	}
+	if killedPID == "" {
+		if m := killedProcessRe.FindStringSubmatch(ev.Message); len(m) == 3 {
+			killedPID = m[1]
+		}
+	}
+	if killedVMID == "" {
+		if m := qemuScopeRe.FindStringSubmatch(ev.Message); len(m) == 2 {
+			killedVMID = m[1]
+		}
+	}
+
+	if killedPID != "" || killedVMID != "" {
+		memoryEvidence := h.oomMemoryEvidence(ctx, hostHints, killedPID, killedVMID)
+		evidence = append(evidence, memoryEvidence...)
+	}
+
+	return analyzeOOM(evidence)
+}
+
+func (h *LogHandler) oomHostHints(ctx context.Context, ev models.LogEvent) []string {
+	var hosts []string
+	if host := hostFromSource(ev.Source); host != "" {
+		hosts = append(hosts, host)
+	}
+
+	var serverHost, proxmoxHost string
+	_ = h.db.QueryRow(ctx, `SELECT COALESCE(host,''), COALESCE(proxmox_host,'') FROM servers WHERE id=$1`, ev.ServerID).Scan(&serverHost, &proxmoxHost)
+	for _, host := range []string{serverHost, proxmoxHost} {
+		if host != "" {
+			hosts = append(hosts, host)
+		}
+	}
+	return uniqueStrings(hosts)
+}
+
+func (h *LogHandler) oomMemoryEvidence(ctx context.Context, hostHints []string, killedPID, killedVMID string) []models.IncidentEvidence {
+	var clauses []string
+	var args []any
+	argN := 1
+
+	sourceClause, sourceArgs, nextArg := sourceLikeClause("source", sourceLikePatterns(hostHints), argN)
+	clauses = append(clauses, sourceClause)
+	args = append(args, sourceArgs...)
+	argN = nextArg
+
+	var msgClauses []string
+	if killedPID != "" {
+		msgClauses = append(msgClauses, "message LIKE $"+strconv.Itoa(argN))
+		args = append(args, "%PID="+killedPID+"%")
+		argN++
+		msgClauses = append(msgClauses, "message LIKE $"+strconv.Itoa(argN))
+		args = append(args, "% "+killedPID+" %")
+		argN++
+	}
+	if killedVMID != "" {
+		msgClauses = append(msgClauses, "message LIKE $"+strconv.Itoa(argN))
+		args = append(args, "VMID="+killedVMID+" %")
+		argN++
+		msgClauses = append(msgClauses, "message LIKE $"+strconv.Itoa(argN))
+		args = append(args, "%-id "+killedVMID+" %")
+		argN++
+	}
+	if len(msgClauses) == 0 {
+		return nil
+	}
+	clauses = append(clauses, "("+strings.Join(msgClauses, " OR ")+")")
+
+	query := `
+		SELECT timestamp, event_type, severity, source, message
+		FROM log_events
+		WHERE ` + strings.Join(clauses, " AND ") + `
+		  AND (
+			source LIKE 'proxmox_host_memory%'
+			OR source LIKE 'proxmox_vm_status%'
+			OR message LIKE 'VMID=%'
+			OR message ILIKE '%/usr/bin/kvm%'
+		  )
+		ORDER BY timestamp DESC
+		LIMIT 30`
+	rows, err := h.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var evidence []models.IncidentEvidence
+	for rows.Next() {
+		var item models.IncidentEvidence
+		if err := rows.Scan(&item.Timestamp, &item.EventType, &item.Severity, &item.Source, &item.Message); err == nil {
+			evidence = append(evidence, item)
+		}
+	}
+	return evidence
+}
+
+func sourceLikePatterns(hosts []string) []string {
+	if len(hosts) == 0 {
+		return []string{"proxmox_%"}
+	}
+	patterns := make([]string, 0, len(hosts))
+	for _, host := range hosts {
+		patterns = append(patterns, "%@"+host)
+	}
+	return patterns
+}
+
+func sourceLikeClause(column string, patterns []string, startArg int) (string, []any, int) {
+	var clauses []string
+	args := make([]any, 0, len(patterns))
+	argN := startArg
+	for _, pattern := range patterns {
+		clauses = append(clauses, column+" LIKE $"+strconv.Itoa(argN))
+		args = append(args, pattern)
+		argN++
+	}
+	if len(clauses) == 0 {
+		return "FALSE", args, argN
+	}
+	return "(" + strings.Join(clauses, " OR ") + ")", args, argN
+}
+
+func uniqueStrings(values []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
 }
 
 func (h *LogHandler) Stats(w http.ResponseWriter, r *http.Request) {

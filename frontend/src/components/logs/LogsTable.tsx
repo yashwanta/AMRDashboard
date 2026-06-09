@@ -66,6 +66,7 @@ function cleanMessage(raw: string): string {
 function explainMessage(ev: LogEvent): string {
   const message = ev.message.toLowerCase()
   const rds = parseRdsLog(ev.message)
+  const oom = ev.oom_analysis
   if (ev.event_type === 'robot_offline' && rds?.serverIP) {
     if (message.includes('connection refused')) return `Robot ${rds.serverIP} refused the TCP connection.`
     if (message.includes('remote host closed')) return `Robot ${rds.serverIP} closed the connection unexpectedly.`
@@ -79,6 +80,10 @@ function explainMessage(ev: LogEvent): string {
   if (ev.event_type === 'vm_stopped') return 'A virtual machine was stopped or received a shutdown event.'
   if (ev.event_type === 'vm_started') return 'A virtual machine started or returned to running state.'
   if (ev.event_type === 'vm_reboot') return 'A virtual machine recorded or received a reboot event.'
+  if (ev.event_type === 'vm_killed_by_oom' && oom?.killed_vmid) {
+    const label = oom.killed_vm_name ? `VM ${oom.killed_vmid} (${oom.killed_vm_name})` : `VM ${oom.killed_vmid}`
+    return `${label} was killed by the Proxmox OOM killer.`
+  }
   if (ev.event_type === 'vm_killed_by_oom') return 'A VM process appears to have been killed during an out-of-memory condition.'
   if (ev.event_type === 'host_memory_exhaustion') return 'The Proxmox host reported memory exhaustion.'
   if (ev.event_type === 'swap_full') return 'The host reported full or exhausted swap.'
@@ -108,6 +113,7 @@ function suggestAction(ev: LogEvent): string | null {
   if (ev.event_type.includes('shutdown') || ev.event_type.includes('reboot') || ev.event_type === 'vm_stopped') {
     return 'Confirm whether this was planned maintenance. If not, compare nearby power, UPS, and network events.'
   }
+  if ((ev.event_type === 'vm_killed_by_oom' || ev.event_type === 'host_memory_exhaustion' || ev.event_type === 'swap_full') && ev.oom_analysis?.recommendation) return ev.oom_analysis.recommendation
   if (ev.event_type === 'vm_killed_by_oom' || ev.event_type === 'host_memory_exhaustion' || ev.event_type === 'swap_full') return 'Review Proxmox host memory pressure, VM reservations, ballooning, and high-memory processes.'
   if (ev.event_type === 'backup_job' || ev.event_type === 'backup_found_vm_stopped') return 'Review Proxmox task history and backup schedule around the VM state change.'
   if (ev.event_type === 'ha_action') return 'Check HA manager decisions, fencing, and migration logs for the affected VM.'
@@ -133,7 +139,26 @@ function friendlySummary(ev: LogEvent): string {
   if (ev.event_type === 'robot_offline' && rds?.serverIP) {
     return `${rds.serverIP} ${rds.tcpReason ? `- ${rds.tcpReason}` : '- disconnected'}`
   }
+  if (ev.event_type === 'vm_killed_by_oom' && ev.oom_analysis?.killed_vmid) {
+    const parts = [`VM ${ev.oom_analysis.killed_vmid}`]
+    if (ev.oom_analysis.killed_vm_name) parts.push(ev.oom_analysis.killed_vm_name)
+    if (ev.oom_analysis.killed_anon_gb) parts.push(`${ev.oom_analysis.killed_anon_gb.toFixed(2)} GB RSS`)
+    return `${parts.join(' - ')} killed by OOM`
+  }
   return cleanMessage(ev.message)
+}
+
+function fmtGB(value?: number): string {
+  return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(2)} GB` : '-'
+}
+
+function fmtMB(value?: number): string {
+  return typeof value === 'number' && Number.isFinite(value) ? `${value.toLocaleString()} MB` : '-'
+}
+
+function vmLabel(vmid?: string, name?: string): string {
+  if (!vmid) return '-'
+  return name ? `VM ${vmid} (${name})` : `VM ${vmid}`
 }
 
 export default function LogsTable({ events, loading }: Props) {
@@ -190,6 +215,7 @@ export default function LogsTable({ events, loading }: Props) {
             const rds = parseRdsLog(ev.message)
             const parsed = parseRawLog(ev.message)
             const action = suggestAction(ev)
+            const oom = ev.oom_analysis
 
             return [
               <tr
@@ -249,7 +275,45 @@ export default function LogsTable({ events, loading }: Props) {
                         </div>
                       )}
 
-                      {action && (
+                      {oom && (
+                        <div className="bg-red-950/25 border border-red-800 rounded-lg p-4">
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-3">
+                            <div>
+                              <p className="text-xs font-bold text-red-300 uppercase">Memory culprit analysis</p>
+                              <p className="text-sm text-red-100 font-semibold">{oom.explanation}</p>
+                            </div>
+                            <span className="w-fit rounded-md border border-red-700 px-2 py-1 text-xs font-semibold uppercase text-red-200">
+                              {oom.confidence} confidence
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            <div className="bg-gray-950/60 border border-gray-700 rounded-lg p-3">
+                              <div className="text-xs text-gray-500 mb-1">Killed VM</div>
+                              <div className="text-sm font-semibold text-white">{vmLabel(oom.killed_vmid, oom.killed_vm_name)}</div>
+                              <div className="text-xs text-gray-400 mt-1">
+                                PID {oom.killed_pid || '-'}{oom.killed_process ? ` (${oom.killed_process})` : ''}
+                              </div>
+                            </div>
+                            <div className="bg-gray-950/60 border border-gray-700 rounded-lg p-3">
+                              <div className="text-xs text-gray-500 mb-1">Highest memory VM</div>
+                              <div className="text-sm font-semibold text-white">{vmLabel(oom.top_vmid, oom.top_vm_name)}</div>
+                              <div className="text-xs text-gray-400 mt-1">
+                                RSS {fmtGB(oom.top_rss_gb)} / Config {fmtMB(oom.top_config_mb)}
+                              </div>
+                            </div>
+                            <div className="bg-gray-950/60 border border-gray-700 rounded-lg p-3">
+                              <div className="text-xs text-gray-500 mb-1">OOM evidence</div>
+                              <div className="text-sm font-semibold text-white">{fmtGB(oom.killed_anon_gb)} killed RSS</div>
+                              <div className="text-xs text-gray-400 mt-1">
+                                Host {oom.proxmox_host || '-'} / Total VM {fmtGB(oom.killed_total_gb)}
+                              </div>
+                            </div>
+                          </div>
+                          <p className="text-sm text-red-100 mt-3">{oom.recommendation}</p>
+                        </div>
+                      )}
+
+                      {action && !oom && (
                         <div className="bg-blue-950/30 border border-blue-800 rounded-lg p-3">
                           <p className="text-xs font-bold text-blue-300 uppercase mb-1">Suggested review</p>
                           <p className="text-sm text-blue-100">{action}</p>
