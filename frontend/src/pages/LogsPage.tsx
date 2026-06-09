@@ -237,6 +237,51 @@ export default function LogsPage() {
                 <p className="text-sm text-gray-100">{incident.recommended_fix}</p>
               </div>
             </div>
+            {incident.oom_analysis && (
+              <div className="bg-red-950/20 border border-red-800/60 rounded-lg p-3">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div>
+                    <p className="text-xs font-semibold text-red-300 uppercase tracking-wide">Memory culprit</p>
+                    <p className="text-sm text-gray-100 mt-1">{incident.oom_analysis.explanation}</p>
+                  </div>
+                  <span className="text-xs rounded-full border border-red-700 bg-red-900/40 px-2 py-1 text-red-200">
+                    {incident.oom_analysis.confidence} confidence
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  <div className="bg-gray-950/60 border border-gray-700 rounded-md p-2">
+                    <p className="text-xs text-gray-500">Killed VM</p>
+                    <p className="text-sm font-semibold text-white">
+                      {incident.oom_analysis.killed_vmid ? `VM ${incident.oom_analysis.killed_vmid}` : 'Not found'}
+                    </p>
+                    {incident.oom_analysis.killed_vm_name && <p className="text-xs text-gray-400 truncate">{incident.oom_analysis.killed_vm_name}</p>}
+                  </div>
+                  <div className="bg-gray-950/60 border border-gray-700 rounded-md p-2">
+                    <p className="text-xs text-gray-500">Highest memory VM</p>
+                    <p className="text-sm font-semibold text-white">
+                      {incident.oom_analysis.top_vmid ? `VM ${incident.oom_analysis.top_vmid}` : 'Not found'}
+                    </p>
+                    {incident.oom_analysis.top_vm_name && <p className="text-xs text-gray-400 truncate">{incident.oom_analysis.top_vm_name}</p>}
+                  </div>
+                  <div className="bg-gray-950/60 border border-gray-700 rounded-md p-2">
+                    <p className="text-xs text-gray-500">Memory evidence</p>
+                    <p className="text-sm font-semibold text-white">
+                      {incident.oom_analysis.killed_anon_gb ? `${incident.oom_analysis.killed_anon_gb.toFixed(2)} GB killed RSS` :
+                        incident.oom_analysis.top_rss_gb ? `${incident.oom_analysis.top_rss_gb.toFixed(2)} GB live RSS` : 'Not found'}
+                    </p>
+                    {incident.oom_analysis.top_config_mb ? <p className="text-xs text-gray-400">{incident.oom_analysis.top_config_mb} MB configured</p> : null}
+                  </div>
+                  <div className="bg-gray-950/60 border border-gray-700 rounded-md p-2">
+                    <p className="text-xs text-gray-500">Proxmox / process</p>
+                    <p className="text-sm font-semibold text-white truncate">{incident.oom_analysis.proxmox_host || 'Unknown host'}</p>
+                    <p className="text-xs text-gray-400 truncate">
+                      {[incident.oom_analysis.killed_process, incident.oom_analysis.killed_pid ? `PID ${incident.oom_analysis.killed_pid}` : ''].filter(Boolean).join(' / ') || 'Process not found'}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-300 mt-3">{incident.oom_analysis.recommendation}</p>
+              </div>
+            )}
             <div>
               <p className="text-xs font-semibold text-gray-400 mb-2">Evidence</p>
               <div className="space-y-1.5">

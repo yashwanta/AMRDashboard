@@ -133,5 +133,24 @@ export interface IncidentSummary {
   recovered_at: string | null
   root_cause: string
   recommended_fix: string
+  oom_analysis?: OOMAnalysis
   evidence: IncidentEvidence[]
+}
+
+export interface OOMAnalysis {
+  killed_vmid?: string
+  killed_vm_name?: string
+  killed_pid?: string
+  killed_process?: string
+  killed_anon_gb?: number
+  killed_total_gb?: number
+  top_vmid?: string
+  top_vm_name?: string
+  top_pid?: string
+  top_rss_gb?: number
+  top_config_mb?: number
+  proxmox_host?: string
+  confidence: string
+  explanation: string
+  recommendation: string
 }

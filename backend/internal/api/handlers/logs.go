@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -191,9 +192,16 @@ func (h *LogHandler) IncidentSummary(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(r.Context(), `
 		SELECT timestamp, event_type, severity, source, message
 		FROM log_events
-		WHERE server_id=$1 AND timestamp >= $2 AND timestamp <= $3
+		WHERE server_id=$1
+		  AND timestamp >= $2
+		  AND timestamp <= $3
+		  AND (
+			event_type <> 'unknown'
+			OR source LIKE 'proxmox_host_memory%'
+			OR message LIKE 'VMID=%'
+		  )
 		ORDER BY timestamp ASC
-		LIMIT 200`, serverID, from, to)
+		LIMIT 1000`, serverID, from, to)
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -202,14 +210,15 @@ func (h *LogHandler) IncidentSummary(w http.ResponseWriter, r *http.Request) {
 
 	counts := map[string]int{}
 	var first, recovered *time.Time
-	var evidence []models.IncidentEvidence
+	var allEvents []models.IncidentEvidence
 	for rows.Next() {
 		var ev models.IncidentEvidence
 		if err := rows.Scan(&ev.Timestamp, &ev.EventType, &ev.Severity, &ev.Source, &ev.Message); err != nil {
 			continue
 		}
+		allEvents = append(allEvents, ev)
 		counts[ev.EventType]++
-		if ev.EventType != "unknown" && first == nil {
+		if isIncidentSignal(ev.EventType) && first == nil {
 			t := ev.Timestamp
 			first = &t
 		}
@@ -217,13 +226,8 @@ func (h *LogHandler) IncidentSummary(w http.ResponseWriter, r *http.Request) {
 			t := ev.Timestamp
 			recovered = &t
 		}
-		if len(evidence) < 12 && ev.EventType != "unknown" {
-			if len(ev.Message) > 220 {
-				ev.Message = ev.Message[:220]
-			}
-			evidence = append(evidence, ev)
-		}
 	}
+	evidence := selectIncidentEvidence(allEvents)
 	if evidence == nil {
 		evidence = []models.IncidentEvidence{}
 	}
@@ -231,8 +235,175 @@ func (h *LogHandler) IncidentSummary(w http.ResponseWriter, r *http.Request) {
 	summary.StartedAt = first
 	summary.RecoveredAt = recovered
 	summary.Evidence = evidence
+	summary.OOMAnalysis = analyzeOOM(allEvents)
 	summary.WhatHappened, summary.RootCause, summary.RecommendedFix = correlateIncident(counts, summary)
 	jsonOK(w, summary)
+}
+
+func isIncidentSignal(eventType string) bool {
+	switch eventType {
+	case "unknown", "ssh_login_activity", "robot_online", "warning", "update":
+		return false
+	default:
+		return true
+	}
+}
+
+func selectIncidentEvidence(events []models.IncidentEvidence) []models.IncidentEvidence {
+	var selected []models.IncidentEvidence
+	add := func(match func(models.IncidentEvidence) bool) {
+		for _, ev := range events {
+			if len(selected) >= 12 {
+				return
+			}
+			if !match(ev) || containsEvidence(selected, ev) {
+				continue
+			}
+			if len(ev.Message) > 220 {
+				ev.Message = ev.Message[:220]
+			}
+			selected = append(selected, ev)
+		}
+	}
+
+	add(func(ev models.IncidentEvidence) bool {
+		return ev.EventType == "vm_killed_by_oom" || ev.EventType == "host_memory_exhaustion" || ev.EventType == "swap_full"
+	})
+	add(func(ev models.IncidentEvidence) bool {
+		return ev.EventType == "vm_stopped" || ev.EventType == "vm_started" || ev.EventType == "proxmox_host_reboot" || ev.EventType == "proxmox_host_shutdown"
+	})
+	add(func(ev models.IncidentEvidence) bool {
+		return isIncidentSignal(ev.EventType)
+	})
+	return selected
+}
+
+func containsEvidence(events []models.IncidentEvidence, candidate models.IncidentEvidence) bool {
+	for _, ev := range events {
+		if ev.Timestamp.Equal(candidate.Timestamp) && ev.EventType == candidate.EventType && ev.Source == candidate.Source && ev.Message == candidate.Message {
+			return true
+		}
+	}
+	return false
+}
+
+type vmMemorySample struct {
+	vmid     string
+	name     string
+	pid      string
+	rssGB    float64
+	configMB int
+	host     string
+}
+
+var (
+	qemuScopeRe         = regexp.MustCompile(`(?:/qemu\.slice/|[^0-9])([0-9]+)\.scope`)
+	killedProcessRe     = regexp.MustCompile(`Killed process ([0-9]+) \(([^)]+)\)`)
+	kernelMemoryRe      = regexp.MustCompile(`total-vm:([0-9]+)kB.*anon-rss:([0-9]+)kB`)
+	vmRSSRe             = regexp.MustCompile(`VMID=([^\s]+)\s+NAME=([^\s]+)\s+PID=([^\s]+)\s+RSS_GB=([0-9.]+)\s+CONFIG_MB=([0-9]+)`)
+	proxmoxHostSuffixRe = regexp.MustCompile(`@(.+)$`)
+)
+
+func analyzeOOM(events []models.IncidentEvidence) *models.OOMAnalysis {
+	var analysis models.OOMAnalysis
+	var top *vmMemorySample
+
+	for _, ev := range events {
+		msg := ev.Message
+		lower := strings.ToLower(msg)
+		if strings.HasPrefix(ev.Source, "proxmox") && analysis.ProxmoxHost == "" {
+			analysis.ProxmoxHost = hostFromSource(ev.Source)
+		}
+
+		if strings.Contains(lower, "oom") || strings.Contains(lower, "out of memory") || strings.Contains(lower, "killed process") {
+			if m := qemuScopeRe.FindStringSubmatch(msg); len(m) == 2 && analysis.KilledVMID == "" {
+				analysis.KilledVMID = m[1]
+				if host := hostFromSource(ev.Source); host != "" {
+					analysis.ProxmoxHost = host
+				}
+			}
+			if m := killedProcessRe.FindStringSubmatch(msg); len(m) == 3 {
+				analysis.KilledPID = m[1]
+				analysis.KilledProcess = m[2]
+			}
+			if m := kernelMemoryRe.FindStringSubmatch(msg); len(m) == 3 {
+				if totalKB, err := strconv.ParseInt(m[1], 10, 64); err == nil {
+					analysis.KilledTotalGB = kbToGB(totalKB)
+				}
+				if anonKB, err := strconv.ParseInt(m[2], 10, 64); err == nil {
+					analysis.KilledAnonGB = kbToGB(anonKB)
+				}
+			}
+		}
+
+		if m := vmRSSRe.FindStringSubmatch(msg); len(m) == 6 {
+			rss, _ := strconv.ParseFloat(m[4], 64)
+			configMB, _ := strconv.Atoi(m[5])
+			sample := vmMemorySample{
+				vmid:     m[1],
+				name:     m[2],
+				pid:      m[3],
+				rssGB:    rss,
+				configMB: configMB,
+				host:     hostFromSource(ev.Source),
+			}
+			if top == nil || sample.rssGB > top.rssGB {
+				candidate := sample
+				top = &candidate
+			}
+			if analysis.KilledVMID != "" && sample.vmid == analysis.KilledVMID {
+				analysis.KilledVMName = sample.name
+			}
+		}
+	}
+
+	if top != nil {
+		analysis.TopVMID = top.vmid
+		analysis.TopVMName = top.name
+		analysis.TopPID = top.pid
+		analysis.TopRSSGB = top.rssGB
+		analysis.TopConfigMB = top.configMB
+		if analysis.ProxmoxHost == "" {
+			analysis.ProxmoxHost = top.host
+		}
+		if analysis.KilledVMID == top.vmid && analysis.KilledVMName == "" {
+			analysis.KilledVMName = top.name
+		}
+	}
+
+	if analysis.KilledVMID == "" && analysis.TopVMID == "" && analysis.KilledPID == "" {
+		return nil
+	}
+
+	switch {
+	case analysis.KilledVMID != "" && analysis.TopVMID != "" && analysis.KilledVMID == analysis.TopVMID:
+		analysis.Confidence = "high"
+		analysis.Explanation = "The VM killed by the OOM event was also the highest-memory VM in the Proxmox memory snapshot."
+	case analysis.KilledVMID != "":
+		analysis.Confidence = "high"
+		analysis.Explanation = "The Proxmox OOM log identifies the killed QEMU scope, which maps to VM " + analysis.KilledVMID + "."
+	case analysis.TopVMID != "":
+		analysis.Confidence = "medium"
+		analysis.Explanation = "No killed VM scope was found, but the Proxmox memory snapshot shows the highest-memory VM."
+	default:
+		analysis.Confidence = "medium"
+		analysis.Explanation = "The OOM log identifies the killed process, but no VMID memory snapshot was available."
+	}
+
+	analysis.Recommendation = "Review this VM's configured RAM, ballooning, workload memory use, and whether the Proxmox host has enough free RAM/swap before restarting or migrating workloads."
+	return &analysis
+}
+
+func hostFromSource(source string) string {
+	if m := proxmoxHostSuffixRe.FindStringSubmatch(source); len(m) == 2 {
+		return m[1]
+	}
+	return ""
+}
+
+func kbToGB(kb int64) float64 {
+	gb := float64(kb) / 1024 / 1024
+	return float64(int(gb*100+0.5)) / 100
 }
 
 func correlateIncident(counts map[string]int, s models.IncidentSummary) (string, string, string) {
@@ -251,6 +422,20 @@ func correlateIncident(counts map[string]int, s models.IncidentSummary) (string,
 
 	switch {
 	case has("vm_killed_by_oom") && has("host_memory_exhaustion"):
+		if s.OOMAnalysis != nil && s.OOMAnalysis.KilledVMID != "" {
+			vmLabel := "VM " + s.OOMAnalysis.KilledVMID
+			if s.OOMAnalysis.KilledVMName != "" {
+				vmLabel += " (" + s.OOMAnalysis.KilledVMName + ")"
+			}
+			return label + " stopped during a Proxmox host OOM event that killed " + vmLabel + ".", vmLabel + " was killed by the Proxmox OOM killer during host memory exhaustion.", "Reduce memory pressure on " + vmLabel + ", review RAM reservation/ballooning, and add or free host RAM before restarting the VM."
+		}
+		if s.OOMAnalysis != nil && s.OOMAnalysis.TopVMID != "" {
+			vmLabel := "VM " + s.OOMAnalysis.TopVMID
+			if s.OOMAnalysis.TopVMName != "" {
+				vmLabel += " (" + s.OOMAnalysis.TopVMName + ")"
+			}
+			return label + " stopped during a host memory pressure event.", vmLabel + " was the highest-memory VM in the Proxmox memory snapshot.", "Reduce memory pressure on " + vmLabel + ", review RAM reservation/ballooning, and add or free host RAM before restarting workloads."
+		}
 		return label + " stopped during a host memory pressure event.", "VM stopped due to Proxmox host memory exhaustion.", "Reduce host memory pressure, review VM reservations/ballooning, and consider moving workloads before restarting the VM."
 	case has("backup_found_vm_stopped") && has("vm_stopped"):
 		return label + " was already stopped when a backup job ran.", "VM was stopped before or during backup processing.", "Check Proxmox task history around the stop event, then verify backup scheduling and VM start policy."

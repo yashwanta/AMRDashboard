@@ -104,5 +104,24 @@ type IncidentSummary struct {
 	RecoveredAt    *time.Time         `json:"recovered_at"`
 	RootCause      string             `json:"root_cause"`
 	RecommendedFix string             `json:"recommended_fix"`
+	OOMAnalysis    *OOMAnalysis       `json:"oom_analysis,omitempty"`
 	Evidence       []IncidentEvidence `json:"evidence"`
+}
+
+type OOMAnalysis struct {
+	KilledVMID     string  `json:"killed_vmid,omitempty"`
+	KilledVMName   string  `json:"killed_vm_name,omitempty"`
+	KilledPID      string  `json:"killed_pid,omitempty"`
+	KilledProcess  string  `json:"killed_process,omitempty"`
+	KilledAnonGB   float64 `json:"killed_anon_gb,omitempty"`
+	KilledTotalGB  float64 `json:"killed_total_gb,omitempty"`
+	TopVMID        string  `json:"top_vmid,omitempty"`
+	TopVMName      string  `json:"top_vm_name,omitempty"`
+	TopPID         string  `json:"top_pid,omitempty"`
+	TopRSSGB       float64 `json:"top_rss_gb,omitempty"`
+	TopConfigMB    int     `json:"top_config_mb,omitempty"`
+	ProxmoxHost    string  `json:"proxmox_host,omitempty"`
+	Confidence     string  `json:"confidence"`
+	Explanation    string  `json:"explanation"`
+	Recommendation string  `json:"recommendation"`
 }
