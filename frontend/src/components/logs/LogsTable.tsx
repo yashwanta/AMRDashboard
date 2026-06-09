@@ -27,6 +27,20 @@ interface ParsedLog {
   body: string
 }
 
+interface ProxmoxAccessLog {
+  clientIP: string
+  user: string
+  time: string
+  method: string
+  path: string
+  node?: string
+  resourceType?: string
+  resourceId?: string
+  action: 'console' | 'api' | 'other'
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
 function parseRdsLog(msg: string): RdsLog | null {
   const portM = msg.match(/^\[(\d+)\]/)
   const levelM = msg.match(/^\[\d+\]\[(\w+)\]/)
@@ -54,6 +68,56 @@ function parseRawLog(raw: string): ParsedLog | null {
   return null
 }
 
+function fullMessage(ev: LogEvent): string {
+  return ev.raw_line?.trim() || ev.message
+}
+
+function parseProxmoxAccessLog(raw: string): ProxmoxAccessLog | null {
+  const log = raw.trim()
+  if (!log.includes('pveproxy/access.log') && !log.includes('/api2/')) return null
+
+  const match = log.match(/(?:::ffff:)?([0-9a-fA-F:.]+)\s+-\s+(\S+)\s+\[([^\]]+)\]\s+"([A-Z]+)\s+([^"\s]+)/)
+  if (!match) return null
+
+  const path = safeDecodeURIComponent(match[5])
+  const route = path.match(/\/api2\/(?:json|extjs|html)\/nodes\/([^/]+)\/(lxc|qemu)\/([^/]+)\/([^?/\s]+)/)
+  const action = route?.[4]?.includes('vnc') ? 'console' : path.includes('vnc') ? 'console' : 'api'
+  return {
+    clientIP: match[1],
+    user: match[2],
+    time: formatAccessTime(match[3]),
+    method: match[4],
+    path,
+    node: route?.[1],
+    resourceType: route?.[2] === 'lxc' ? 'LXC container' : route?.[2] === 'qemu' ? 'VM' : undefined,
+    resourceId: route?.[3],
+    action,
+  }
+}
+
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+function formatAccessTime(raw: string): string {
+  const match = raw.match(/^(\d{2})\/(\d{2})\/(\d{4}):(\d{2}):(\d{2}):(\d{2})\s+([+-]\d{4})$/)
+  if (!match) return raw
+  const day = Number(match[1])
+  const month = Number(match[2])
+  const year = match[3]
+  let hour = Number(match[4])
+  const minute = match[5]
+  const second = match[6]
+  const suffix = hour >= 12 ? 'PM' : 'AM'
+  hour = hour % 12 || 12
+  const monthLabel = MONTHS[month - 1] ?? match[2]
+  return `${monthLabel} ${day}, ${year} at ${hour}:${minute}:${second} ${suffix} (${match[7]})`
+}
+
 function stripAnsi(s: string): string {
   return s.replace(/#033\[[0-9;]*m/g, '').replace(/\x1b\[[0-9;]*m/g, '')
 }
@@ -64,8 +128,14 @@ function cleanMessage(raw: string): string {
 }
 
 function explainMessage(ev: LogEvent): string {
-  const message = ev.message.toLowerCase()
-  const rds = parseRdsLog(ev.message)
+  const raw = fullMessage(ev)
+  const message = raw.toLowerCase()
+  const access = parseProxmoxAccessLog(raw)
+  if (access?.action === 'console' && access.resourceType && access.resourceId) {
+    return `${access.user} opened a Proxmox console session for ${access.resourceType} ${access.resourceId} from ${access.clientIP}.`
+  }
+  if (access) return `${access.user} made a Proxmox API request from ${access.clientIP}.`
+  const rds = parseRdsLog(raw)
   const oom = ev.oom_analysis
   if (ev.event_type === 'robot_offline' && rds?.serverIP) {
     if (message.includes('connection refused')) return `Robot ${rds.serverIP} refused the TCP connection.`
@@ -104,7 +174,11 @@ function explainMessage(ev: LogEvent): string {
 }
 
 function suggestAction(ev: LogEvent): string | null {
-  const message = ev.message.toLowerCase()
+  const raw = fullMessage(ev)
+  const access = parseProxmoxAccessLog(raw)
+  if (access?.action === 'console') return 'Reference only: confirm this was expected if you did not open the console, do not recognize the source IP, or root@pam should not have been used.'
+  if (access) return 'Reference only: confirm this Proxmox API activity was expected if the user or source IP is unfamiliar.'
+  const message = raw.toLowerCase()
   if (ev.event_type === 'robot_offline') {
     if (message.includes('timeout')) return 'Check robot power and network reachability from the server.'
     if (message.includes('remote host closed')) return 'Confirm whether the robot was restarted or intentionally disconnected.'
@@ -135,7 +209,13 @@ function safeFormat(ts: string, fmt: string) {
 }
 
 function friendlySummary(ev: LogEvent): string {
-  const rds = parseRdsLog(ev.message)
+  const raw = fullMessage(ev)
+  const access = parseProxmoxAccessLog(raw)
+  if (access?.action === 'console' && access.resourceType && access.resourceId) {
+    return `${access.user} opened console for ${access.resourceType} ${access.resourceId} from ${access.clientIP}`
+  }
+  if (access) return `${access.user} made Proxmox API request from ${access.clientIP}`
+  const rds = parseRdsLog(raw)
   if (ev.event_type === 'robot_offline' && rds?.serverIP) {
     return `${rds.serverIP} ${rds.tcpReason ? `- ${rds.tcpReason}` : '- disconnected'}`
   }
@@ -145,7 +225,7 @@ function friendlySummary(ev: LogEvent): string {
     if (ev.oom_analysis.killed_anon_gb) parts.push(`${ev.oom_analysis.killed_anon_gb.toFixed(2)} GB RSS`)
     return `${parts.join(' - ')} killed by OOM`
   }
-  return cleanMessage(ev.message)
+  return cleanMessage(raw)
 }
 
 function fmtGB(value?: number): string {
@@ -210,12 +290,18 @@ export default function LogsTable({ events, loading }: Props) {
         </thead>
         <tbody>
           {events.flatMap(ev => {
-            const meta = EVENT_META[ev.event_type] ?? { label: eventLabel(ev.event_type), tone: 'bg-gray-100 text-gray-700 border-gray-200', row: '' }
             const isOpen = expanded.has(ev.id)
-            const rds = parseRdsLog(ev.message)
-            const parsed = parseRawLog(ev.message)
+            const raw = fullMessage(ev)
+            const rds = parseRdsLog(raw)
+            const parsed = parseRawLog(raw)
+            const access = parseProxmoxAccessLog(raw)
+            const meta = access
+              ? { label: access.action === 'console' ? 'Proxmox console access' : 'Proxmox API access', tone: 'bg-slate-100 text-slate-700 border-slate-200', row: '' }
+              : EVENT_META[ev.event_type] ?? { label: eventLabel(ev.event_type), tone: 'bg-gray-100 text-gray-700 border-gray-200', row: '' }
             const action = suggestAction(ev)
-            const oom = ev.oom_analysis
+            const oom = access ? null : ev.oom_analysis
+            const severityLabel = access ? 'reference' : ev.severity
+            const severityClass = access ? SEVERITY_CLASS.low : SEVERITY_CLASS[ev.severity] ?? SEVERITY_CLASS.low
 
             return [
               <tr
@@ -236,13 +322,13 @@ export default function LogsTable({ events, loading }: Props) {
                   </span>
                 </td>
                 <td className="py-2.5 pr-4">
-                  <span className={clsx('text-xs px-2 py-0.5 rounded-md font-medium whitespace-nowrap capitalize', SEVERITY_CLASS[ev.severity] ?? SEVERITY_CLASS.low)}>
-                    {ev.severity}
+                  <span className={clsx('text-xs px-2 py-0.5 rounded-md font-medium whitespace-nowrap capitalize', severityClass)}>
+                    {severityLabel}
                   </span>
                 </td>
                 <td className="py-2.5 overflow-hidden">
                   {showRawSummary
-                    ? <span className="block truncate text-xs font-mono text-gray-300">{cleanMessage(ev.message)}</span>
+                    ? <span className="block truncate text-xs font-mono text-gray-300">{cleanMessage(raw)}</span>
                     : <span className="block truncate text-gray-100 font-medium">{friendlySummary(ev)}</span>
                   }
                 </td>
@@ -258,6 +344,30 @@ export default function LogsTable({ events, loading }: Props) {
                           {sourceLabel(ev.source)} on {ev.server_name} at {safeFormat(ev.timestamp, 'MMM d, yyyy h:mm:ss a')}
                         </p>
                       </div>
+
+                      {access && (
+                        <div className="bg-slate-950/70 border border-slate-700 rounded-lg p-4 space-y-3">
+                          <div>
+                            <p className="text-xs font-bold text-slate-300 uppercase mb-1">Plain English</p>
+                            <p className="text-sm text-slate-100">
+                              {access.action === 'console' && access.resourceType && access.resourceId
+                                ? `Someone using ${access.user} opened the Proxmox console/VNC session for ${access.resourceType} ${access.resourceId} from IP ${access.clientIP} on ${access.time}.`
+                                : `Someone using ${access.user} made a Proxmox API request from IP ${access.clientIP} on ${access.time}.`}
+                            </p>
+                          </div>
+                          {access.action === 'console' && (
+                            <p className="text-sm text-slate-200">This is normally just someone clicking Console in Proxmox.</p>
+                          )}
+                          <div>
+                            <p className="text-xs font-bold text-amber-300 uppercase mb-1">Concern only if</p>
+                            <ul className="text-sm text-amber-100 space-y-1 list-disc list-inside">
+                              <li>You did not do it</li>
+                              <li>You do not recognize {access.clientIP}</li>
+                              <li>{access.user} should not have been used</li>
+                            </ul>
+                          </div>
+                        </div>
+                      )}
 
                       {rds && rds.serverIP && (
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -330,11 +440,11 @@ export default function LogsTable({ events, loading }: Props) {
                             <tbody className="divide-y divide-gray-700/50">
                               <tr><td className="px-3 py-2 font-medium text-gray-400 w-32">Time</td><td className="px-3 py-2 font-mono text-gray-200">{safeFormat(ev.timestamp, 'MMM d, yyyy h:mm:ss a')}</td></tr>
                               <tr><td className="px-3 py-2 font-medium text-gray-400">Server</td><td className="px-3 py-2 text-gray-200">{ev.server_name}</td></tr>
-                              <tr><td className="px-3 py-2 font-medium text-gray-400">Category</td><td className="px-3 py-2 text-gray-200">{eventLabel(ev.event_type)}</td></tr>
+                              <tr><td className="px-3 py-2 font-medium text-gray-400">Category</td><td className="px-3 py-2 text-gray-200">{meta.label}</td></tr>
                               <tr><td className="px-3 py-2 font-medium text-gray-400">Source</td><td className="px-3 py-2 text-gray-200">{sourceLabel(ev.source)}</td></tr>
                               {parsed?.host && <tr><td className="px-3 py-2 font-medium text-gray-400">Hostname</td><td className="px-3 py-2 font-mono text-gray-200">{parsed.host}</td></tr>}
                               {parsed?.process && <tr><td className="px-3 py-2 font-medium text-gray-400">Process</td><td className="px-3 py-2 font-mono text-gray-200">{parsed.process}</td></tr>}
-                              <tr><td className="px-3 py-2 font-medium text-gray-400 align-top">Raw log</td><td className="px-3 py-2 font-mono text-gray-200 break-all whitespace-pre-wrap">{parsed?.body ?? ev.message}</td></tr>
+                              <tr><td className="px-3 py-2 font-medium text-gray-400 align-top">Raw log</td><td className="px-3 py-2 font-mono text-gray-200 break-all whitespace-pre-wrap">{parsed?.body ?? raw}</td></tr>
                             </tbody>
                           </table>
                         </div>

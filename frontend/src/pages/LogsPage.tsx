@@ -83,7 +83,10 @@ export default function LogsPage() {
   }, [events])
 
   const proxmoxHosts = useMemo(() => [...new Set(servers.map(s => s.proxmox_host).filter(Boolean))], [servers])
-  const vmids = useMemo(() => [...new Set(servers.map(s => s.vmid).filter(Boolean))], [servers])
+  const vmids = useMemo(() => {
+    const values = servers.flatMap(s => (s.vmid ?? '').split(/[\s,;]+/).map(v => v.trim()).filter(Boolean))
+    return [...new Set(values)].sort((a, b) => Number(a) - Number(b))
+  }, [servers])
 
   const set = (k: keyof LogFilters, v: string | number | undefined) =>
     setFilters(f => ({ ...f, [k]: v || undefined }))

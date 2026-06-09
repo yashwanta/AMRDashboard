@@ -155,6 +155,16 @@ func TestParseLineSkipsRootHistorySearchCommands(t *testing.T) {
 	}
 }
 
+func TestParseLineClassifiesProxmoxConsoleAccessAsLoginActivity(t *testing.T) {
+	ev := ParseLine(`/var/log/pveproxy/access.log.1:15474:::ffff:10.2.1.60 - root@pam [08/06/2026:16:23:59 -0500] "GET /api2/json/nodes/pve/lxc/109/vncwebsocket?port=5900&vncticket=PVEVNC%3A6A2732EF%3A%3AOoM9JCEP5eSfKoyVT6uA3mHkMO556aOdmfOU0bZZO HTTP/1.1" 101 0`, "proxmox_tasks@10.222.10.50", 7)
+	if ev == nil {
+		t.Fatal("expected event, got nil")
+	}
+	if ev.EventType != "ssh_login_activity" {
+		t.Fatalf("event type = %q, want ssh_login_activity", ev.EventType)
+	}
+}
+
 func TestParseLineSkipsCollectionCommandContinuation(t *testing.T) {
 	ev := ParseLine(`2026-06-08T07:25:53-05:00 host sudo[322080]: fleetmanager : (command continued) "shutdown|reboot|oom|out of memory|killed process"`, "journald_amr", 7)
 	if ev != nil {

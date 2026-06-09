@@ -154,6 +154,9 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 
 	ts := extractTimestamp(line)
 	matchLine := strings.ToLower(line)
+	if strings.HasPrefix(source, "proxmox") && isProxmoxAccessLog(matchLine) {
+		return newEvent(serverID, ts, "ssh_login_activity", "low", line, source)
+	}
 	if strings.HasPrefix(source, "proxmox") && !strings.Contains(source, "root_history") && hasAny(matchLine, "oom", "out of memory", "killed process", "oom-killer", "oom-kill") {
 		if hasAny(matchLine, "qemu", "kvm", "qemu.slice", ".scope", "vm ") {
 			return newEvent(serverID, ts, "vm_killed_by_oom", "critical", line, source)
@@ -174,6 +177,13 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 	}
 
 	return newEvent(serverID, ts, "unknown", "low", line, source)
+}
+
+func isProxmoxAccessLog(line string) bool {
+	return strings.Contains(line, "pveproxy/access.log") ||
+		strings.Contains(line, "/api2/json/") ||
+		strings.Contains(line, "/api2/extjs/") ||
+		strings.Contains(line, "/api2/html/")
 }
 
 func hasAny(s string, needles ...string) bool {

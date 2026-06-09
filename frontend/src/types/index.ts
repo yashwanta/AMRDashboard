@@ -72,6 +72,7 @@ export interface LogEvent {
   severity: 'critical' | 'high' | 'medium' | 'low' | 'info'
   message: string
   source: string
+  raw_line?: string
   oom_analysis?: OOMAnalysis
   created_at: string
 }

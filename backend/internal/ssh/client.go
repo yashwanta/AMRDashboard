@@ -198,12 +198,7 @@ func (c *Client) FetchProxmoxLogs(since time.Time, vmid string) map[string]strin
 		}
 	}
 
-	vmExpr := "[0-9]+"
-	vmLoop := "for id in $(qm list 2>/dev/null | awk 'NR>1 {print $1}'); do"
-	if strings.TrimSpace(vmid) != "" {
-		vmExpr = strings.TrimSpace(vmid)
-		vmLoop = fmt.Sprintf("for id in %q; do", vmExpr)
-	}
+	vmExpr, vmLoop := proxmoxVMSelector(vmid)
 
 	pveGrep := "qemu|kvm|qm |vm |VM |oom|out of memory|killed process|memory|swap|backup|vzdump|pbs|ha-manager|pve-ha|shutdown|reboot|stopped|started|task|disk|smart|zfs|network|dhcp|link is down|link is up|failed|error"
 	vmGrep := fmt.Sprintf("UPID.*:%s:|qemu/%s|VM %s|vm:%s|status/(stop|shutdown|start|reset)|qm(stop|shutdown|start|reset):%s|qm (stop|shutdown|start|reset) %s|vzdump:%s|backup|vzdump|lock|qmp|agent|freeze|thaw|oom|out of memory|killed process|%s.scope|qemu.slice|kvm", vmExpr, vmExpr, vmExpr, vmExpr, vmExpr, vmExpr, vmExpr, vmExpr)
@@ -242,4 +237,43 @@ func (c *Client) FetchProxmoxLogs(since time.Time, vmid string) map[string]strin
 	run("proxmox_boot_history", "echo '=boots='; journalctl --list-boots --no-pager 2>/dev/null || true; echo '=shutdown_history='; last -x -F 2>/dev/null | egrep -i 'shutdown|reboot|runlevel|crash' | head -n 50 || true")
 
 	return logs
+}
+
+func proxmoxVMSelector(raw string) (string, string) {
+	ids := parseProxmoxVMIDs(raw)
+	if len(ids) == 0 {
+		return "[0-9]+", "for id in $(qm list 2>/dev/null | awk 'NR>1 {print $1}'); do"
+	}
+	expr := strings.Join(ids, "|")
+	if len(ids) > 1 {
+		expr = "(" + expr + ")"
+	}
+	return expr, "for id in " + strings.Join(ids, " ") + "; do"
+}
+
+func parseProxmoxVMIDs(raw string) []string {
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\r' || r == '\t' || r == ' '
+	})
+	seen := map[string]bool{}
+	var ids []string
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		valid := true
+		for _, r := range part {
+			if r < '0' || r > '9' {
+				valid = false
+				break
+			}
+		}
+		if !valid || seen[part] {
+			continue
+		}
+		seen[part] = true
+		ids = append(ids, part)
+	}
+	return ids
 }

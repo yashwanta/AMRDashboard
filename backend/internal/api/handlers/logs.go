@@ -76,9 +76,14 @@ func (h *LogHandler) List(w http.ResponseWriter, r *http.Request) {
 		argN++
 	}
 	if vmid := q.Get("vmid"); vmid != "" {
-		where += " AND s.vmid=$" + strconv.Itoa(argN)
-		args = append(args, vmid)
+		where += " AND (s.vmid=$" + strconv.Itoa(argN) +
+			" OR (',' || regexp_replace(s.vmid, '\\s+', '', 'g') || ',') LIKE $" + strconv.Itoa(argN+1) +
+			" OR le.message ILIKE $" + strconv.Itoa(argN+2) +
+			" OR le.message ILIKE $" + strconv.Itoa(argN+3) +
+			" OR le.message ILIKE $" + strconv.Itoa(argN+4) + ")"
+		args = append(args, vmid, "%,"+vmid+",%", "%VMID="+vmid+"%", "%/"+vmid+".scope%", "% "+vmid+" %")
 		argN++
+		argN += 4
 	}
 	if search := q.Get("q"); search != "" {
 		terms := strings.Fields(search)
@@ -108,7 +113,7 @@ func (h *LogHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.db.Query(r.Context(), `
 		SELECT le.id, le.server_id, s.name, le.timestamp, le.event_type,
-		       le.severity, le.message, le.source, le.created_at
+		       le.severity, le.message, le.source, COALESCE(le.raw_line,''), le.created_at
 		FROM log_events le
 		JOIN servers s ON s.id = le.server_id
 		`+where+`
@@ -124,7 +129,7 @@ func (h *LogHandler) List(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var e models.LogEvent
 		if err := rows.Scan(&e.ID, &e.ServerID, &e.ServerName, &e.Timestamp,
-			&e.EventType, &e.Severity, &e.Message, &e.Source, &e.CreatedAt); err != nil {
+			&e.EventType, &e.Severity, &e.Message, &e.Source, &e.RawLine, &e.CreatedAt); err != nil {
 			continue
 		}
 		if shouldAnalyzeOOMRow(e) {

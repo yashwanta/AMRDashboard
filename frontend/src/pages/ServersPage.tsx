@@ -116,7 +116,7 @@ export default function ServersPage() {
                       {(s.proxmox_host || s.vmid || s.app_log_paths) && (
                         <div className="flex flex-wrap gap-2 mt-2 text-xs">
                           {s.proxmox_host && <span className="px-2 py-0.5 rounded-md bg-purple-900/40 text-purple-200 border border-purple-800">PVE {s.proxmox_host}</span>}
-                          {s.vmid && <span className="px-2 py-0.5 rounded-md bg-sky-900/40 text-sky-200 border border-sky-800">VMID {s.vmid}</span>}
+                          {s.vmid && <span className="px-2 py-0.5 rounded-md bg-sky-900/40 text-sky-200 border border-sky-800">VMIDs {s.vmid}</span>}
                           {s.app_log_paths && <span className="px-2 py-0.5 rounded-md bg-gray-900 text-gray-300 border border-gray-700">Custom app logs</span>}
                         </div>
                       )}

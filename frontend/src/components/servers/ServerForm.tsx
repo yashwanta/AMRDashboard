@@ -101,8 +101,8 @@ export default function ServerForm({ initial, onSubmit, onCancel }: Props) {
           <input className={inputCls} value={form.proxmox_host ?? ''} onChange={e => set('proxmox_host', e.target.value)} placeholder="pve01.local or 10.0.0.5" />
         </div>
         <div>
-          <label className={labelCls}>VMID</label>
-          <input className={inputCls} value={form.vmid ?? ''} onChange={e => set('vmid', e.target.value)} placeholder="104" />
+          <label className={labelCls}>Monitored VMIDs</label>
+          <input className={inputCls} value={form.vmid ?? ''} onChange={e => set('vmid', e.target.value)} placeholder="Blank = all, or 104, 113, 260003" />
         </div>
         <div>
           <label className={labelCls}>PVE SSH user</label>
