@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -74,6 +75,7 @@ func (h *RAGHandler) Query(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	events = rankEventsForQuestion(question, events)
 
 	answer := buildSiteOpsAnswer(question, events)
 	contextIDs := make([]string, 0, len(events))
@@ -223,6 +225,95 @@ func (h *RAGHandler) searchEvents(r *http.Request, question string) ([]ragSource
 		events = append(events, ev)
 	}
 	return events, nil
+}
+
+func rankEventsForQuestion(question string, events []ragSourceEvent) []ragSourceEvent {
+	ranked := append([]ragSourceEvent(nil), events...)
+	sort.SliceStable(ranked, func(i, j int) bool {
+		left := eventQuestionRank(question, ranked[i])
+		right := eventQuestionRank(question, ranked[j])
+		if left != right {
+			return left < right
+		}
+		if severityRank(ranked[i].Severity) != severityRank(ranked[j].Severity) {
+			return severityRank(ranked[i].Severity) < severityRank(ranked[j].Severity)
+		}
+		return ranked[i].Timestamp.After(ranked[j].Timestamp)
+	})
+	return ranked
+}
+
+func eventQuestionRank(question string, ev ragSourceEvent) int {
+	q := strings.ToLower(question)
+	raw := strings.ToLower(ev.EventType + " " + ev.Message + " " + ev.RawLine)
+	switch {
+	case strings.Contains(q, "robot") || strings.Contains(q, "disconnect") || strings.Contains(q, "offline"):
+		if ev.EventType == "robot_offline" && strings.Contains(raw, "socketstate:unconnectedstate") {
+			return 0
+		}
+		if ev.EventType == "robot_offline" && strings.Contains(raw, "add device failed") {
+			return 1
+		}
+		if ev.EventType == "robot_offline" {
+			return 2
+		}
+		if strings.Contains(raw, "socketstate") || strings.Contains(raw, "add device failed") {
+			return 3
+		}
+		return 20
+	case strings.Contains(q, "oom") || strings.Contains(q, "memory") || strings.Contains(q, "killed"):
+		if ev.EventType == "vm_killed_by_oom" {
+			return 0
+		}
+		if ev.EventType == "host_memory_exhaustion" || ev.EventType == "swap_full" {
+			return 1
+		}
+		if strings.Contains(raw, "oom") || strings.Contains(raw, "out of memory") || strings.Contains(raw, "killed process") {
+			return 2
+		}
+		return 20
+	case strings.Contains(q, "proxmox") || strings.Contains(q, "console") || strings.Contains(q, "login") || strings.Contains(q, "access"):
+		if parseProxmoxAccessDetails(ev.RawLine+" "+ev.Message) != nil {
+			return 0
+		}
+		if ev.EventType == "ssh_login_activity" {
+			return 1
+		}
+		return 20
+	case strings.Contains(q, "disk") || strings.Contains(q, "storage") || strings.Contains(q, "smart") || strings.Contains(q, "filesystem"):
+		if ev.EventType == "disk_smart_issue" || ev.EventType == "disk_error" {
+			return 0
+		}
+		if strings.Contains(raw, "smart") || strings.Contains(raw, "filesystem") || strings.Contains(raw, "disk") {
+			return 1
+		}
+		return 20
+	case strings.Contains(q, "service") || strings.Contains(q, "failed") || strings.Contains(q, "crash") || strings.Contains(q, "application"):
+		if ev.EventType == "service_failure" || ev.EventType == "crash" {
+			return 0
+		}
+		if ev.EventType == "error" {
+			return 1
+		}
+		return 20
+	default:
+		return 10
+	}
+}
+
+func severityRank(severity string) int {
+	switch severity {
+	case "critical":
+		return 0
+	case "high":
+		return 1
+	case "medium":
+		return 2
+	case "low":
+		return 3
+	default:
+		return 4
+	}
 }
 
 func meaningfulTerms(question string) []string {

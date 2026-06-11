@@ -98,3 +98,40 @@ func TestBuildSiteOpsAnswerExplainsRobotDisconnect(t *testing.T) {
 		t.Fatalf("robot disconnect answer should not use generic wording: %q", answer)
 	}
 }
+
+func TestRankEventsForQuestionPrioritizesRobotEvidence(t *testing.T) {
+	events := []ragSourceEvent{
+		{
+			ID:        1,
+			EventType: "error",
+			Severity:  "high",
+			Timestamp: time.Date(2026, 6, 11, 14, 37, 22, 0, time.UTC),
+			Message:   "Open file failed[/opt/Roboshop/bin/location/appInfo/robots///models/robot.cp]:No such file or directory",
+			RawLine:   "Open file failed[/opt/Roboshop/bin/location/appInfo/robots///models/robot.cp]:No such file or directory",
+		},
+		{
+			ID:        2,
+			EventType: "robot_offline",
+			Severity:  "high",
+			Timestamp: time.Date(2026, 6, 11, 14, 37, 21, 0, time.UTC),
+			Message:   "[Server:10.216.35.5:19204][Tcp:none] SocketState:UnconnectedState",
+			RawLine:   "[Server:10.216.35.5:19204][Tcp:none] SocketState:UnconnectedState",
+		},
+		{
+			ID:        3,
+			EventType: "robot_offline",
+			Severity:  "high",
+			Timestamp: time.Date(2026, 6, 11, 14, 37, 20, 0, time.UTC),
+			Message:   "Add device failed:[10.216.35.5:19204]",
+			RawLine:   "Add device failed:[10.216.35.5:19204]",
+		},
+	}
+
+	ranked := rankEventsForQuestion("Why Robot was Disconnected?", events)
+	if ranked[0].ID != 2 {
+		t.Fatalf("expected socket disconnect evidence first, got event ID %d", ranked[0].ID)
+	}
+	if ranked[1].ID != 3 {
+		t.Fatalf("expected add-device failure second, got event ID %d", ranked[1].ID)
+	}
+}

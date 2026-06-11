@@ -55,6 +55,11 @@ func PlainEnglishLog(ev models.LogEvent) string {
 		}
 		return fmt.Sprintf("Robot %s is not connected to the server.", robotIP)
 	}
+	if ev.EventType == "robot_offline" {
+		if endpoint := extractBracketEndpoint(raw); endpoint != "" && strings.Contains(lower, "add device failed") {
+			return fmt.Sprintf("FleetManager could not add or reconnect robot %s.", endpoint)
+		}
+	}
 
 	switch ev.EventType {
 	case "ubuntu_server_shutdown":
@@ -206,6 +211,14 @@ func formatProxmoxAccessTime(raw string) string {
 
 func extractRobotIP(raw string) string {
 	match := regexp.MustCompile(`\[Server:([0-9.]+):`).FindStringSubmatch(raw)
+	if match == nil {
+		return ""
+	}
+	return match[1]
+}
+
+func extractBracketEndpoint(raw string) string {
+	match := regexp.MustCompile(`\[([0-9.]+:[0-9]+)\]`).FindStringSubmatch(raw)
 	if match == nil {
 		return ""
 	}
