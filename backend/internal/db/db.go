@@ -75,4 +75,19 @@ CREATE TABLE IF NOT EXISTS sync_jobs (
     event_count INT NOT NULL DEFAULT 0,
     error       TEXT
 );
+
+CREATE TABLE IF NOT EXISTS action_runs (
+    id          BIGSERIAL PRIMARY KEY,
+    server_id   INT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    action      TEXT NOT NULL,
+    command     TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    output      TEXT NOT NULL DEFAULT '',
+    error       TEXT NOT NULL DEFAULT '',
+    created_by  TEXT NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_action_runs_server_id ON action_runs(server_id);
+CREATE INDEX IF NOT EXISTS idx_action_runs_created_at ON action_runs(created_at DESC);
 `

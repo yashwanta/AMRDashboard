@@ -156,3 +156,39 @@ export interface OOMAnalysis {
   explanation: string
   recommendation: string
 }
+
+export interface LoginResponse {
+  token: string
+  username: string
+  expires_at: string
+}
+
+export type AutomationAction =
+  | 'service_status'
+  | 'service_restart'
+  | 'service_start'
+  | 'service_stop'
+  | 'service_enable'
+  | 'service_disable'
+  | 'change_password'
+  | 'custom_command'
+
+export interface ActionRunRequest {
+  server_id: number
+  action: AutomationAction
+  service_name?: string
+  username?: string
+  new_password?: string
+  command?: string
+}
+
+export interface ActionRun {
+  id: number
+  server_id: number
+  action: AutomationAction
+  command: string
+  status: 'success' | 'failed'
+  output: string
+  error?: string
+  created_at: string
+}

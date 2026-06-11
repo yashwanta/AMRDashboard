@@ -30,6 +30,10 @@ services:
       DATABASE_URL: postgres://amr:amr@postgres:5432/amrdashboard?sslmode=disable
       SERVER_PORT: 8080
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-change-this-32-byte-secret-key!!}
+      SESSION_SECRET: ${SESSION_SECRET:-change-this-session-secret!!}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      ALLOW_CUSTOM_COMMANDS: ${ALLOW_CUSTOM_COMMANDS:-false}
       SCHEDULE_AM: "0 6 * * *"
       SCHEDULE_PM: "0 18 * * *"
     ports:

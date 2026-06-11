@@ -6,18 +6,27 @@ This guide installs RoboWatch as a containerized app with:
 - Go backend API
 - PostgreSQL database
 
-The easiest production install is the Ubuntu installer.
+The easiest production install is the Linux Docker installer. It supports Ubuntu/Debian and AlmaLinux/RHEL-family servers.
 
-## Ubuntu Quick Install
+## Linux Quick Install
 
-On the Ubuntu server:
+On the Ubuntu or AlmaLinux server:
 
 ```bash
+# Ubuntu/Debian:
 sudo apt-get update
 sudo apt-get install -y git
+
+# AlmaLinux/RHEL-family:
+sudo dnf install -y git
+```
+
+Then:
+
+```bash
 git clone https://github.com/yashwanta/AMRDashboard.git
 cd AMRDashboard
-sudo bash scripts/install-ubuntu-containers.sh
+sudo bash scripts/install-linux-docker.sh
 ```
 
 Open the app:
@@ -38,7 +47,7 @@ sudo /opt/robowatch/robowatch-control.sh status
 Use this if port `3000` or `8080` is already used:
 
 ```bash
-sudo APP_PORT=8088 API_PORT=18080 bash scripts/install-ubuntu-containers.sh
+sudo APP_PORT=8088 API_PORT=18080 bash scripts/install-linux-docker.sh
 ```
 
 Then open:
@@ -47,15 +56,16 @@ Then open:
 http://SERVER_IP:8088
 ```
 
-## Use Docker Instead Of Podman
+## What The Installer Does
 
-The installer uses Podman if installed, Docker if installed, and installs Podman if neither exists.
+The installer:
 
-To force Docker:
-
-```bash
-sudo CONTAINER_RUNTIME=docker bash scripts/install-ubuntu-containers.sh
-```
+- Detects Ubuntu/Debian or AlmaLinux/RHEL-family Linux.
+- Installs Docker Engine and required packages.
+- Builds the RoboWatch backend and frontend images locally.
+- Starts PostgreSQL, backend, and frontend containers.
+- Creates a `robowatch` systemd service.
+- Opens the web UI port in `ufw` or `firewalld` when available.
 
 ## Build Images Only
 
@@ -95,7 +105,7 @@ From the repo directory:
 
 ```bash
 git pull
-sudo bash scripts/install-ubuntu-containers.sh
+sudo bash scripts/install-linux-docker.sh
 ```
 
 The PostgreSQL data remains in the `robowatch-pgdata` container volume.
@@ -110,16 +120,6 @@ sudo systemctl start robowatch
 
 ## Logs
 
-For Podman:
-
-```bash
-sudo podman logs robowatch-backend
-sudo podman logs robowatch-frontend
-sudo podman logs robowatch-postgres
-```
-
-For Docker:
-
 ```bash
 sudo docker logs robowatch-backend
 sudo docker logs robowatch-frontend
@@ -128,13 +128,13 @@ sudo docker logs robowatch-postgres
 
 ## Configuration
 
-The Ubuntu installer writes configuration here:
+The installer writes configuration here:
 
 ```text
 /opt/robowatch/robowatch.env
 ```
 
-This file contains the database password and `ENCRYPTION_KEY`, so keep it private.
+This file contains the database password, `ENCRYPTION_KEY`, and web login password, so keep it private.
 
 Important settings:
 
@@ -143,8 +143,11 @@ Important settings:
 | `APP_PORT` | `3000` | Web UI port |
 | `API_PORT` | `8080` | Backend API port |
 | `SERVICE_NAME` | `robowatch` | systemd service name |
-| `CONTAINER_RUNTIME` | auto | `podman` or `docker` |
 | `ENCRYPTION_KEY` | generated | Key used to encrypt saved SSH credentials |
+| `SESSION_SECRET` | generated | Key used to sign web login tokens |
+| `ADMIN_USERNAME` | `admin` | Web login username |
+| `ADMIN_PASSWORD` | generated | Web login password |
+| `ALLOW_CUSTOM_COMMANDS` | `false` | Enables custom Automation commands |
 | `SCHEDULE_AM` | `0 6 * * *` | Morning sync cron |
 | `SCHEDULE_PM` | `0 18 * * *` | Evening sync cron |
 

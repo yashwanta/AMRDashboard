@@ -45,20 +45,20 @@ Optional custom tags:
 BACKEND_IMAGE=robowatch-backend:1.0 FRONTEND_IMAGE=robowatch-frontend:1.0 bash scripts/build-container-images.sh
 ```
 
-## Ubuntu Installer
+## Linux Docker Installer
 
-For a full Ubuntu install with systemd restart support:
+For a full Ubuntu, Debian, AlmaLinux, or RHEL-family install with Docker and systemd restart support:
 
 ```bash
-sudo bash scripts/install-ubuntu-containers.sh
+sudo bash scripts/install-linux-docker.sh
 ```
 
-The installer uses Podman if available, Docker if available, and installs Podman if neither runtime exists.
+The installer installs Docker Engine when needed, builds the app images, starts PostgreSQL/backend/frontend containers, and creates a `robowatch` systemd service.
 
 Useful options:
 
 ```bash
-sudo APP_PORT=8088 API_PORT=18080 bash scripts/install-ubuntu-containers.sh
+sudo APP_PORT=8088 API_PORT=18080 bash scripts/install-linux-docker.sh
 sudo systemctl status robowatch
 ```
 
@@ -99,13 +99,17 @@ npm run dev
 
 ## Environment Variables
 
-| Variable         | Default                                           | Description                              |
-|------------------|---------------------------------------------------|------------------------------------------|
-| `DATABASE_URL`   | `postgres://amr:amr@localhost:5432/amrdashboard`  | PostgreSQL connection string             |
-| `SERVER_PORT`    | `8080`                                            | Backend HTTP port                        |
-| `ENCRYPTION_KEY` | *(required)*                                      | 32-byte AES key for SSH credential store |
-| `SCHEDULE_AM`    | `0 6 * * *`                                       | Morning auto-sync (6 AM)                 |
-| `SCHEDULE_PM`    | `0 18 * * *`                                      | Evening auto-sync (6 PM)                 |
+| Variable | Default | Description |
+| --- | --- | --- |
+| `DATABASE_URL` | `postgres://amr:amr@localhost:5432/amrdashboard` | PostgreSQL connection string |
+| `SERVER_PORT` | `8080` | Backend HTTP port |
+| `ENCRYPTION_KEY` | *(required)* | 32-byte AES key for SSH credential store |
+| `SESSION_SECRET` | `ENCRYPTION_KEY` | Secret used to sign web login tokens |
+| `ADMIN_USERNAME` | `admin` | Web login username |
+| `ADMIN_PASSWORD` | `admin` | Web login password; change this before sharing the app |
+| `ALLOW_CUSTOM_COMMANDS` | `false` | Enables the Automation page custom-command action |
+| `SCHEDULE_AM` | `0 6 * * *` | Morning auto-sync (6 AM) |
+| `SCHEDULE_PM` | `0 18 * * *` | Evening auto-sync (6 PM) |
 
 ---
 

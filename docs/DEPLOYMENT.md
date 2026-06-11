@@ -37,12 +37,12 @@ Open:
 - App: http://localhost:3000
 - API: http://localhost:8080/api
 
-## Ubuntu Installer
+## Linux Docker Installer
 
-The Ubuntu installer builds the images locally, creates a Postgres volume, starts all containers, and installs a systemd service.
+The Linux Docker installer supports Ubuntu/Debian and AlmaLinux/RHEL-family systems. It installs Docker when needed, builds the images locally, creates a Postgres volume, starts all containers, opens the app firewall port when possible, and installs a systemd service.
 
 ```bash
-sudo bash scripts/install-ubuntu-containers.sh
+sudo bash scripts/install-linux-docker.sh
 ```
 
 Defaults:
@@ -51,23 +51,19 @@ Defaults:
 - API port: `8080`
 - Install directory: `/opt/robowatch`
 - Service name: `robowatch`
-- Runtime: Podman if installed, Docker if installed, otherwise installs Podman
+- Runtime: Docker
 
 Common options:
 
 ```bash
-sudo APP_PORT=8088 API_PORT=18080 bash scripts/install-ubuntu-containers.sh
-```
-
-```bash
-sudo CONTAINER_RUNTIME=docker bash scripts/install-ubuntu-containers.sh
+sudo APP_PORT=8088 API_PORT=18080 bash scripts/install-linux-docker.sh
 ```
 
 ```bash
 sudo BACKEND_IMAGE=robowatch-backend:prod \
   FRONTEND_IMAGE=robowatch-frontend:prod \
   SERVICE_NAME=robowatch \
-  bash scripts/install-ubuntu-containers.sh
+  bash scripts/install-linux-docker.sh
 ```
 
 Manage the installed service:
@@ -84,14 +80,14 @@ The installer writes secrets and runtime settings to:
 /opt/robowatch/robowatch.env
 ```
 
-Keep that file private because it contains the database password and SSH credential encryption key.
+Keep that file private because it contains the database password, SSH credential encryption key, and web login password.
 
-## Updating An Ubuntu Install
+## Updating A Linux Docker Install
 
 Pull the new code, then rerun:
 
 ```bash
-sudo bash scripts/install-ubuntu-containers.sh
+sudo bash scripts/install-linux-docker.sh
 ```
 
 The Postgres data stays in the `robowatch-pgdata` container volume.

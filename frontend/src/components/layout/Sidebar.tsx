@@ -1,12 +1,14 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Server, FileText, RefreshCw } from 'lucide-react'
+import { LayoutDashboard, Server, FileText, RefreshCw, Wrench, LogOut } from 'lucide-react'
 import { clsx } from 'clsx'
+import { useAuth } from '../../auth'
 
 const nav = [
   { to: '/',         label: 'Dashboard',  Icon: LayoutDashboard },
   { to: '/logs',     label: 'Logs',       Icon: FileText },
   { to: '/servers',  label: 'Servers',    Icon: Server },
   { to: '/sync',     label: 'Sync Jobs',  Icon: RefreshCw },
+  { to: '/automation', label: 'Automation', Icon: Wrench },
 ]
 
 function RoboWatchLogo() {
@@ -24,6 +26,8 @@ function RoboWatchLogo() {
 }
 
 export default function Sidebar() {
+  const auth = useAuth()
+
   return (
     <aside className="w-56 flex-shrink-0 bg-gray-900 text-gray-300 flex flex-col">
       <div className="flex items-center gap-2.5 px-5 py-5 border-b border-gray-700">
@@ -53,8 +57,18 @@ export default function Sidebar() {
           </NavLink>
         ))}
       </nav>
-      <div className="px-5 py-4 text-xs text-gray-500 border-t border-gray-700">
-        Auto-sync: 6 AM &amp; 6 PM
+      <div className="px-5 py-4 text-xs text-gray-500 border-t border-gray-700 space-y-3">
+        <div>
+          <div className="text-gray-400">{auth.username}</div>
+          <div>Auto-sync: 6 AM &amp; 6 PM</div>
+        </div>
+        <button
+          onClick={auth.logout}
+          className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+        >
+          <LogOut size={14} />
+          Sign out
+        </button>
       </div>
     </aside>
   )

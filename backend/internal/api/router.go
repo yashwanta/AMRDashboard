@@ -8,38 +8,52 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/cors"
 	"github.com/yashwanta/AMRDashboard/internal/api/handlers"
+	"github.com/yashwanta/AMRDashboard/internal/config"
 )
 
-func NewRouter(db *pgxpool.Pool, encryptionKey string) http.Handler {
+func NewRouter(db *pgxpool.Pool, cfg *config.Config) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
 
-	serverH := handlers.NewServerHandler(db, encryptionKey)
+	authH := handlers.NewAuthHandler(cfg.AdminUsername, cfg.AdminPassword, cfg.SessionSecret)
+	serverH := handlers.NewServerHandler(db, cfg.EncryptionKey)
 	logH := handlers.NewLogHandler(db)
-	syncH := handlers.NewSyncHandler(db, encryptionKey)
+	syncH := handlers.NewSyncHandler(db, cfg.EncryptionKey)
+	actionH := handlers.NewActionHandler(db, cfg.EncryptionKey, cfg.AllowCustomCommands)
 
 	r.Route("/api", func(r chi.Router) {
-		// Servers
-		r.Get("/servers", serverH.List)
-		r.Post("/servers", serverH.Create)
-		r.Put("/servers/{id}", serverH.Update)
-		r.Delete("/servers/{id}", serverH.Delete)
+		r.Post("/auth/login", authH.Login)
 
-		// Sync
-		r.Post("/servers/{id}/sync", syncH.SyncServer)
-		r.Post("/servers/{id}/deep-sync", syncH.DeepSync)
-		r.Post("/sync/all", syncH.SyncAll)
-		r.Post("/sync/test", syncH.TestConnection)
+		r.Group(func(r chi.Router) {
+			r.Use(authH.Middleware)
+			r.Get("/auth/me", authH.Me)
 
-		// Logs & stats
-		r.Get("/logs", logH.List)
-		r.Get("/stats", logH.Stats)
-		r.Get("/timeline", logH.Timeline)
-		r.Get("/incidents/summary", logH.IncidentSummary)
-		r.Get("/sync-history", logH.SyncHistory)
-		r.Get("/server-stats", logH.ServerStats)
+			// Servers
+			r.Get("/servers", serverH.List)
+			r.Post("/servers", serverH.Create)
+			r.Put("/servers/{id}", serverH.Update)
+			r.Delete("/servers/{id}", serverH.Delete)
+
+			// Sync
+			r.Post("/servers/{id}/sync", syncH.SyncServer)
+			r.Post("/servers/{id}/deep-sync", syncH.DeepSync)
+			r.Post("/sync/all", syncH.SyncAll)
+			r.Post("/sync/test", syncH.TestConnection)
+
+			// Logs & stats
+			r.Get("/logs", logH.List)
+			r.Get("/stats", logH.Stats)
+			r.Get("/timeline", logH.Timeline)
+			r.Get("/incidents/summary", logH.IncidentSummary)
+			r.Get("/sync-history", logH.SyncHistory)
+			r.Get("/server-stats", logH.ServerStats)
+
+			// Remote actions
+			r.Post("/actions/run", actionH.Run)
+			r.Get("/actions/history", actionH.History)
+		})
 	})
 
 	corsH := cors.New(cors.Options{

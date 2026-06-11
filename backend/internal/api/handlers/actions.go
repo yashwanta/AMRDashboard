@@ -1,0 +1,217 @@
+package handlers
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/yashwanta/AMRDashboard/internal/models"
+	amrssh "github.com/yashwanta/AMRDashboard/internal/ssh"
+)
+
+type ActionHandler struct {
+	db                  *pgxpool.Pool
+	encryptionKey       string
+	allowCustomCommands bool
+}
+
+type actionRunRequest struct {
+	ServerID    int    `json:"server_id"`
+	Action      string `json:"action"`
+	ServiceName string `json:"service_name,omitempty"`
+	Username    string `json:"username,omitempty"`
+	NewPassword string `json:"new_password,omitempty"`
+	Command     string `json:"command,omitempty"`
+}
+
+type actionRunResponse struct {
+	ID        int64     `json:"id"`
+	ServerID  int       `json:"server_id"`
+	Action    string    `json:"action"`
+	Command   string    `json:"command"`
+	Status    string    `json:"status"`
+	Output    string    `json:"output"`
+	Error     string    `json:"error,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func NewActionHandler(db *pgxpool.Pool, key string, allowCustomCommands bool) *ActionHandler {
+	return &ActionHandler{db: db, encryptionKey: key, allowCustomCommands: allowCustomCommands}
+}
+
+func (h *ActionHandler) Run(w http.ResponseWriter, r *http.Request) {
+	var req actionRunRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if req.ServerID == 0 {
+		jsonError(w, "server is required", http.StatusBadRequest)
+		return
+	}
+
+	command, err := h.buildCommand(req)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	server, err := h.serverWithCredentials(r.Context(), req.ServerID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			jsonError(w, "server not found", http.StatusNotFound)
+			return
+		}
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	client, err := amrssh.Connect(amrssh.Config{
+		Host:       server.Host,
+		Port:       server.Port,
+		Username:   server.Username,
+		AuthType:   server.AuthType,
+		Password:   server.Password,
+		PrivateKey: server.PrivateKey,
+	})
+	if err != nil {
+		h.saveRun(r.Context(), req, command, "failed", "", err.Error(), createdBy(r))
+		jsonError(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer client.Close()
+
+	output, runErr := client.Run(command)
+	status := "success"
+	errText := ""
+	if runErr != nil {
+		status = "failed"
+		errText = runErr.Error()
+	}
+
+	run, saveErr := h.saveRun(r.Context(), req, command, status, output, errText, createdBy(r))
+	if saveErr != nil {
+		jsonError(w, saveErr.Error(), http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, run)
+}
+
+func (h *ActionHandler) History(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.db.Query(r.Context(), `
+		SELECT id, server_id, action, command, status, output, error, created_at
+		FROM action_runs
+		ORDER BY created_at DESC
+		LIMIT 50`)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	runs := []actionRunResponse{}
+	for rows.Next() {
+		var run actionRunResponse
+		if err := rows.Scan(&run.ID, &run.ServerID, &run.Action, &run.Command, &run.Status, &run.Output, &run.Error, &run.CreatedAt); err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		runs = append(runs, run)
+	}
+	jsonOK(w, runs)
+}
+
+func (h *ActionHandler) buildCommand(req actionRunRequest) (string, error) {
+	action := strings.TrimSpace(req.Action)
+	service := strings.TrimSpace(req.ServiceName)
+	switch action {
+	case "service_status", "service_restart", "service_start", "service_stop", "service_enable", "service_disable":
+		if !validUnitName(service) {
+			return "", fmt.Errorf("valid service name is required")
+		}
+		verb := strings.TrimPrefix(action, "service_")
+		return fmt.Sprintf("sudo systemctl %s %s", verb, shellQuote(service)), nil
+	case "change_password":
+		username := strings.TrimSpace(req.Username)
+		if !validLinuxName(username) || req.NewPassword == "" {
+			return "", fmt.Errorf("valid username and new password are required")
+		}
+		pair := username + ":" + req.NewPassword
+		return fmt.Sprintf("printf %%s %s | sudo chpasswd", shellQuote(pair)), nil
+	case "custom_command":
+		if !h.allowCustomCommands {
+			return "", fmt.Errorf("custom commands are disabled on this server")
+		}
+		command := strings.TrimSpace(req.Command)
+		if command == "" {
+			return "", fmt.Errorf("command is required")
+		}
+		return command, nil
+	default:
+		return "", fmt.Errorf("unknown action")
+	}
+}
+
+func (h *ActionHandler) serverWithCredentials(ctx context.Context, id int) (models.ServerRequest, error) {
+	var server models.ServerRequest
+	var passwordEnc, privateKeyEnc string
+	err := h.db.QueryRow(ctx, `
+		SELECT host, port, username, auth_type, COALESCE(password_enc,''), COALESCE(private_key_enc,'')
+		FROM servers WHERE id=$1`, id).
+		Scan(&server.Host, &server.Port, &server.Username, &server.AuthType, &passwordEnc, &privateKeyEnc)
+	if err != nil {
+		return server, err
+	}
+	if passwordEnc != "" {
+		password, err := decrypt(h.encryptionKey, passwordEnc)
+		if err != nil {
+			return server, fmt.Errorf("decrypt server password: %w", err)
+		}
+		server.Password = password
+	}
+	if privateKeyEnc != "" {
+		privateKey, err := decrypt(h.encryptionKey, privateKeyEnc)
+		if err != nil {
+			return server, fmt.Errorf("decrypt server private key: %w", err)
+		}
+		server.PrivateKey = privateKey
+	}
+	return server, nil
+}
+
+func (h *ActionHandler) saveRun(ctx context.Context, req actionRunRequest, command, status, output, errText, createdBy string) (actionRunResponse, error) {
+	var run actionRunResponse
+	err := h.db.QueryRow(ctx, `
+		INSERT INTO action_runs (server_id, action, command, status, output, error, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)
+		RETURNING id, server_id, action, command, status, output, error, created_at`,
+		req.ServerID, req.Action, command, status, output, errText, createdBy).
+		Scan(&run.ID, &run.ServerID, &run.Action, &run.Command, &run.Status, &run.Output, &run.Error, &run.CreatedAt)
+	return run, err
+}
+
+func createdBy(r *http.Request) string {
+	username, _ := usernameFromRequest(r)
+	return username
+}
+
+var unitNameRE = regexp.MustCompile(`^[A-Za-z0-9_.@:-]+$`)
+var linuxNameRE = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+
+func validUnitName(value string) bool {
+	return value != "" && unitNameRE.MatchString(value)
+}
+
+func validLinuxName(value string) bool {
+	return linuxNameRE.MatchString(value)
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
+}

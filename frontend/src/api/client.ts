@@ -1,10 +1,38 @@
 import axios from 'axios'
 import type {
   Server, ServerRequest, LogEvent, DashboardStats,
-  TimelinePoint, SyncJob, IncidentSummary
+  TimelinePoint, SyncJob, IncidentSummary, ActionRun, ActionRunRequest, LoginResponse
 } from '../types'
 
 const api = axios.create({ baseURL: '/api' })
+
+api.interceptors.request.use(config => {
+  const token = localStorage.getItem('robowatch_token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+api.interceptors.response.use(
+  response => response,
+  error => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('robowatch_token')
+      localStorage.removeItem('robowatch_user')
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login'
+      }
+    }
+    return Promise.reject(error)
+  }
+)
+
+// Auth
+export const login = (username: string, password: string) =>
+  api.post<LoginResponse>('/auth/login', { username, password }).then(r => r.data)
+
+export const getMe = () => api.get<{ username: string }>('/auth/me').then(r => r.data)
 
 // Servers
 export const getServers = () => api.get<Server[]>('/servers').then(r => r.data)
@@ -55,3 +83,10 @@ export interface IncidentSummaryParams {
 
 export const getIncidentSummary = (params: IncidentSummaryParams) =>
   api.get<IncidentSummary>('/incidents/summary', { params }).then(r => r.data)
+
+// Remote actions
+export const runAction = (data: ActionRunRequest) =>
+  api.post<ActionRun>('/actions/run', data).then(r => r.data)
+
+export const getActionHistory = () =>
+  api.get<ActionRun[]>('/actions/history').then(r => r.data)
