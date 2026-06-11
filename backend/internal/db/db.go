@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS servers (
     auth_type     TEXT NOT NULL DEFAULT 'password',
     password_enc  TEXT,
     private_key_enc TEXT,
+    asset_type    TEXT NOT NULL DEFAULT 'server',
     proxmox_host  TEXT NOT NULL DEFAULT '',
     proxmox_port  INT  NOT NULL DEFAULT 22,
     proxmox_username TEXT NOT NULL DEFAULT '',
@@ -49,6 +50,9 @@ ALTER TABLE servers ADD COLUMN IF NOT EXISTS proxmox_password_enc TEXT;
 ALTER TABLE servers ADD COLUMN IF NOT EXISTS proxmox_private_key_enc TEXT;
 ALTER TABLE servers ADD COLUMN IF NOT EXISTS vmid TEXT NOT NULL DEFAULT '';
 ALTER TABLE servers ADD COLUMN IF NOT EXISTS app_log_paths TEXT NOT NULL DEFAULT '';
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS asset_type TEXT NOT NULL DEFAULT 'server';
+
+UPDATE servers SET asset_type='server' WHERE asset_type = '';
 
 CREATE TABLE IF NOT EXISTS log_events (
     id          BIGSERIAL PRIMARY KEY,

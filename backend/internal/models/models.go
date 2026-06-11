@@ -11,6 +11,7 @@ type Server struct {
 	AuthType             string     `json:"auth_type"`
 	PasswordEnc          string     `json:"-"`
 	PrivateKeyEnc        string     `json:"-"`
+	AssetType            string     `json:"asset_type"`
 	ProxmoxHost          string     `json:"proxmox_host"`
 	ProxmoxPort          int        `json:"proxmox_port"`
 	ProxmoxUsername      string     `json:"proxmox_username"`
@@ -77,6 +78,7 @@ type ServerRequest struct {
 	AuthType          string `json:"auth_type"`
 	Password          string `json:"password,omitempty"`
 	PrivateKey        string `json:"private_key,omitempty"`
+	AssetType         string `json:"asset_type,omitempty"`
 	ProxmoxHost       string `json:"proxmox_host,omitempty"`
 	ProxmoxPort       int    `json:"proxmox_port,omitempty"`
 	ProxmoxUsername   string `json:"proxmox_username,omitempty"`

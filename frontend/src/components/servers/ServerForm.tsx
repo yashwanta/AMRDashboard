@@ -5,6 +5,7 @@ import { CheckCircle, XCircle, Loader } from 'lucide-react'
 
 interface Props {
   initial?: Server
+  defaultAssetType?: 'server' | 'endpoint'
   submitLabel?: string
   onSubmit: (data: ServerRequest) => Promise<void>
   onCancel: () => void
@@ -13,13 +14,14 @@ interface Props {
 const inputCls = 'w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition-colors'
 const labelCls = 'block text-xs font-medium text-gray-400 mb-1'
 
-export default function ServerForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
+export default function ServerForm({ initial, defaultAssetType = 'server', submitLabel, onSubmit, onCancel }: Props) {
   const [form, setForm] = useState<ServerRequest>({
     name: initial?.name ?? '',
     host: initial?.host ?? '',
     port: initial?.port ?? 22,
     username: initial?.username ?? '',
     auth_type: initial?.auth_type ?? 'password',
+    asset_type: initial?.asset_type ?? defaultAssetType,
     password: '',
     private_key: '',
     proxmox_host: initial?.proxmox_host ?? '',
@@ -58,6 +60,13 @@ export default function ServerForm({ initial, submitLabel, onSubmit, onCancel }:
         <div className="col-span-2">
           <label className={labelCls}>Display name</label>
           <input className={inputCls} value={form.name} onChange={e => set('name', e.target.value)} required placeholder="FleetManager VM 104" />
+        </div>
+        <div className="col-span-2">
+          <label className={labelCls}>Folder / asset type</label>
+          <select className={inputCls} value={form.asset_type ?? 'server'} onChange={e => set('asset_type', e.target.value)}>
+            <option value="server">Server: PVE, Proxmox, Fleet Manager</option>
+            <option value="endpoint">Endpoint computer / workstation</option>
+          </select>
         </div>
 
         <div className="col-span-2 pt-1">

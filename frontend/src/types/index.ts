@@ -5,6 +5,7 @@ export interface Server {
   port: number
   username: string
   auth_type: 'password' | 'key'
+  asset_type: 'server' | 'endpoint'
   proxmox_host: string
   proxmox_port: number
   proxmox_username: string
@@ -22,6 +23,7 @@ export interface ServerRequest {
   port: number
   username: string
   auth_type: 'password' | 'key'
+  asset_type?: 'server' | 'endpoint'
   password?: string
   private_key?: string
   proxmox_host?: string

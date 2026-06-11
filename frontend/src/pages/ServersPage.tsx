@@ -69,6 +69,7 @@ function DeepSyncButton({ serverId, onDone }: { serverId: number; onDone: () => 
 export default function ServersPage() {
   const qc = useQueryClient()
   const { data: servers = [] } = useQuery({ queryKey: ['servers'], queryFn: getServers })
+  const serverAssets = servers.filter(s => (s.asset_type ?? 'server') !== 'endpoint')
   const [modal, setModal] = useState<'add' | 'edit' | null>(null)
   const [editing, setEditing] = useState<Server | null>(null)
 
@@ -82,7 +83,7 @@ export default function ServersPage() {
       <div className="flex items-center justify-between px-6 py-4 bg-gray-900 border-b border-gray-700">
         <div>
           <h1 className="text-base font-semibold text-white">Servers</h1>
-          <p className="text-xs text-gray-400 mt-0.5">{servers.length} server{servers.length !== 1 ? 's' : ''} configured</p>
+          <p className="text-xs text-gray-400 mt-0.5">{serverAssets.length} server{serverAssets.length !== 1 ? 's' : ''} configured</p>
         </div>
         <button onClick={() => { setEditing(null); setModal('add') }}
           className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
@@ -91,14 +92,14 @@ export default function ServersPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-5">
-        {servers.length === 0 ? (
+        {serverAssets.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-gray-500">
             <p className="text-lg font-medium text-gray-400 mb-2">No servers yet</p>
             <p className="text-sm">Click "Add Server" to connect your first server via SSH.</p>
           </div>
         ) : (
           <div className="grid gap-3">
-            {servers.map(s => (
+            {serverAssets.map(s => (
               <div key={s.id} className="bg-gray-800 border border-gray-700 rounded-xl p-5">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-center gap-3 min-w-0">
@@ -108,6 +109,9 @@ export default function ServersPage() {
                         <h3 className="font-semibold text-white">{s.name}</h3>
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusBadge[s.status] ?? statusBadge.unknown}`}>
                           {s.status}
+                        </span>
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-950/50 text-blue-200 border border-blue-800">
+                          Server
                         </span>
                       </div>
                       <p className="text-sm text-gray-400 mt-1 font-mono">
@@ -162,6 +166,7 @@ export default function ServersPage() {
             <div className="p-6">
               <ServerForm
                 initial={editing ?? undefined}
+                defaultAssetType="server"
                 onSubmit={async data => {
                   if (modal === 'add') await createM.mutateAsync(data)
                   else if (editing) await updateM.mutateAsync({ id: editing.id, data })

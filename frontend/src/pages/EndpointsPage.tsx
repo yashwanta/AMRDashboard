@@ -8,6 +8,7 @@ import ServerForm from '../components/servers/ServerForm'
 export default function EndpointsPage() {
   const qc = useQueryClient()
   const { data: servers = [] } = useQuery({ queryKey: ['servers'], queryFn: getServers })
+  const endpoints = servers.filter(server => server.asset_type === 'endpoint')
   const [modal, setModal] = useState<'add' | 'edit' | null>(null)
   const [editing, setEditing] = useState<Server | null>(null)
 
@@ -20,7 +21,7 @@ export default function EndpointsPage() {
       <div className="flex items-center justify-between px-6 py-4 bg-gray-900 border-b border-gray-700">
         <div>
           <h1 className="text-base font-semibold text-white">Endpoints</h1>
-          <p className="text-xs text-gray-400 mt-0.5">SSH targets available to OpsForge actions and log collection</p>
+          <p className="text-xs text-gray-400 mt-0.5">{endpoints.length} endpoint computer{endpoints.length !== 1 ? 's' : ''} / workstation{endpoints.length !== 1 ? 's' : ''}</p>
         </div>
         <button onClick={() => { setEditing(null); setModal('add') }} className="btn-primary flex items-center gap-2">
           <Plus size={14} /> Add Endpoint
@@ -29,7 +30,7 @@ export default function EndpointsPage() {
 
       <div className="flex-1 overflow-y-auto p-5">
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-          {servers.map(server => (
+          {endpoints.map(server => (
             <div key={server.id} className="bg-gray-800 border border-gray-700 rounded-lg p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-start gap-3 min-w-0">
@@ -43,6 +44,7 @@ export default function EndpointsPage() {
                     </div>
                     <div className="flex flex-wrap gap-2 mt-3">
                       <span className="text-xs px-2 py-0.5 rounded-md border border-gray-700 bg-gray-900 text-gray-300">OpsForge target</span>
+                      <span className="text-xs px-2 py-0.5 rounded-md border border-cyan-800 bg-cyan-950/40 text-cyan-200">Endpoint computer</span>
                       {server.proxmox_host && <span className="text-xs px-2 py-0.5 rounded-md border border-purple-800 bg-purple-950/40 text-purple-200">PVE mapped</span>}
                       {server.app_log_paths && <span className="text-xs px-2 py-0.5 rounded-md border border-blue-800 bg-blue-950/40 text-blue-200">App logs</span>}
                     </div>
@@ -61,7 +63,7 @@ export default function EndpointsPage() {
           ))}
         </div>
 
-        {servers.length === 0 && (
+        {endpoints.length === 0 && (
           <div className="text-center text-gray-500 py-16">
             <p className="text-lg text-gray-400 font-medium">No endpoints yet</p>
             <p className="text-sm mt-1">Add an endpoint to use it as an OpsForge target.</p>
@@ -79,6 +81,7 @@ export default function EndpointsPage() {
             <div className="p-6">
               <ServerForm
                 initial={editing ?? undefined}
+                defaultAssetType="endpoint"
                 submitLabel={modal === 'add' ? 'Add Endpoint' : 'Update Endpoint'}
                 onSubmit={async data => {
                   if (modal === 'add') await createM.mutateAsync(data)
