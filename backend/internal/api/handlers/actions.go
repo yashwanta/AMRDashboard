@@ -137,6 +137,14 @@ func (h *ActionHandler) buildCommand(req actionRunRequest) (string, error) {
 		}
 		verb := strings.TrimPrefix(action, "service_")
 		return fmt.Sprintf("sudo systemctl %s %s", verb, shellQuote(service)), nil
+	case "package_update_cache":
+		return packageManagerCommand("sudo apt-get update", "sudo dnf -y makecache", "sudo yum -y makecache"), nil
+	case "package_list_upgrades":
+		return packageManagerCommand("apt list --upgradable 2>/dev/null || true", "dnf check-update || true", "yum check-update || true"), nil
+	case "package_upgrade_dry_run":
+		return packageManagerCommand("sudo apt-get -s upgrade", "sudo dnf -y --assumeno upgrade", "sudo yum -y --assumeno update"), nil
+	case "package_upgrade":
+		return packageManagerCommand("sudo DEBIAN_FRONTEND=noninteractive apt-get -y upgrade", "sudo dnf -y upgrade", "sudo yum -y update"), nil
 	case "change_password":
 		username := strings.TrimSpace(req.Username)
 		if !validLinuxName(username) || req.NewPassword == "" {
@@ -214,4 +222,8 @@ func validLinuxName(value string) bool {
 
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
+}
+
+func packageManagerCommand(apt, dnf, yum string) string {
+	return fmt.Sprintf("if command -v apt-get >/dev/null 2>&1; then %s; elif command -v dnf >/dev/null 2>&1; then %s; elif command -v yum >/dev/null 2>&1; then %s; else echo 'No supported package manager found. Supported: apt, dnf, yum.'; exit 2; fi", apt, dnf, yum)
 }

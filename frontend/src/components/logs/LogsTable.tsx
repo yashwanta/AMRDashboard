@@ -76,7 +76,8 @@ function parseProxmoxAccessLog(raw: string): ProxmoxAccessLog | null {
   const log = raw.trim()
   if (!log.includes('pveproxy/access.log') && !log.includes('/api2/')) return null
 
-  const match = log.match(/(?:::ffff:)?([0-9a-fA-F:.]+)\s+-\s+(\S+)\s+\[([^\]]+)\]\s+"([A-Z]+)\s+([^"\s]+)/)
+  const match = log.match(/([0-9]{1,3}(?:\.[0-9]{1,3}){3})\s+-\s+(\S+)\s+\[([^\]]+)\]\s+"([A-Z]+)\s+([^"\s]+)/)
+    ?? log.match(/(?:::ffff:)?([0-9a-fA-F:.]+)\s+-\s+(\S+)\s+\[([^\]]+)\]\s+"([A-Z]+)\s+([^"\s]+)/)
   if (!match) return null
 
   const path = safeDecodeURIComponent(match[5])
@@ -128,6 +129,7 @@ function cleanMessage(raw: string): string {
 }
 
 function explainMessage(ev: LogEvent): string {
+  if (ev.plain_english) return ev.plain_english
   const raw = fullMessage(ev)
   const message = raw.toLowerCase()
   const access = parseProxmoxAccessLog(raw)
@@ -174,6 +176,7 @@ function explainMessage(ev: LogEvent): string {
 }
 
 function suggestAction(ev: LogEvent): string | null {
+  if (ev.recommended_action) return ev.recommended_action
   const raw = fullMessage(ev)
   const access = parseProxmoxAccessLog(raw)
   if (access?.action === 'console') return 'Reference only: confirm this was expected if you did not open the console, do not recognize the source IP, or root@pam should not have been used.'
@@ -225,6 +228,7 @@ function friendlySummary(ev: LogEvent): string {
     if (ev.oom_analysis.killed_anon_gb) parts.push(`${ev.oom_analysis.killed_anon_gb.toFixed(2)} GB RSS`)
     return `${parts.join(' - ')} killed by OOM`
   }
+  if (ev.plain_english) return ev.plain_english
   return cleanMessage(raw)
 }
 

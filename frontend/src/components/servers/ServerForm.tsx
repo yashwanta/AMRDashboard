@@ -5,6 +5,7 @@ import { CheckCircle, XCircle, Loader } from 'lucide-react'
 
 interface Props {
   initial?: Server
+  submitLabel?: string
   onSubmit: (data: ServerRequest) => Promise<void>
   onCancel: () => void
 }
@@ -12,7 +13,7 @@ interface Props {
 const inputCls = 'w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition-colors'
 const labelCls = 'block text-xs font-medium text-gray-400 mb-1'
 
-export default function ServerForm({ initial, onSubmit, onCancel }: Props) {
+export default function ServerForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
   const [form, setForm] = useState<ServerRequest>({
     name: initial?.name ?? '',
     host: initial?.host ?? '',
@@ -162,7 +163,7 @@ export default function ServerForm({ initial, onSubmit, onCancel }: Props) {
           </button>
           <button type="submit" disabled={saving}
             className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-60">
-            {saving ? 'Saving...' : initial ? 'Update' : 'Add Server'}
+            {saving ? 'Saving...' : submitLabel ?? (initial ? 'Update' : 'Add Server')}
           </button>
         </div>
       </div>

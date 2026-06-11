@@ -74,16 +74,15 @@ func (h *SyncHandler) SyncAll(w http.ResponseWriter, r *http.Request) {
 	}
 	rows.Close()
 
-	var jobIDs []int
-	for _, id := range ids {
-		jid, err := h.runSync(context.Background(), id)
-		if err != nil {
-			log.Printf("sync server %d: %v", id, err)
-			continue
+	go func(serverIDs []int) {
+		for _, id := range serverIDs {
+			if _, err := h.runSync(context.Background(), id); err != nil {
+				log.Printf("sync server %d: %v", id, err)
+			}
 		}
-		jobIDs = append(jobIDs, jid)
-	}
-	jsonOK(w, map[string][]int{"job_ids": jobIDs})
+	}(ids)
+
+	jsonOK(w, map[string]any{"status": "started", "server_ids": ids})
 }
 
 // RunScheduled is called by the scheduler — not exposed via HTTP.

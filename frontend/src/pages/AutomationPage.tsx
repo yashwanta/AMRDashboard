@@ -12,6 +12,10 @@ const actionLabels: Record<AutomationAction, string> = {
   service_stop: 'Stop service',
   service_enable: 'Enable service',
   service_disable: 'Disable service',
+  package_update_cache: 'Update package cache',
+  package_list_upgrades: 'List available upgrades',
+  package_upgrade_dry_run: 'Preview upgrade',
+  package_upgrade: 'Run system upgrade',
   change_password: 'Change user password',
   custom_command: 'Custom command',
 }
@@ -70,8 +74,8 @@ export default function AutomationPage() {
   return (
     <div className="flex flex-col h-full bg-gray-900 text-gray-100">
       <div className="px-6 py-4 bg-gray-900 border-b border-gray-700">
-        <h1 className="text-base font-semibold text-white">Automation</h1>
-        <p className="text-xs text-gray-400 mt-0.5">Run approved playbook-style actions over SSH</p>
+        <h1 className="text-base font-semibold text-white">OpsForge Automation</h1>
+        <p className="text-xs text-gray-400 mt-0.5">Run approved playbook-style actions over SSH with an audit trail</p>
       </div>
 
       <div className="flex-1 overflow-y-auto p-5 grid grid-cols-1 xl:grid-cols-[460px_1fr] gap-5">
@@ -90,6 +94,9 @@ export default function AutomationPage() {
                   <option key={server.id} value={server.id}>{server.name} ({server.host})</option>
                 ))}
               </select>
+              <p className="text-xs text-gray-500 mt-1.5">
+                {servers.length > 0 ? `${servers.length} servers loaded. Open the dropdown to choose one.` : 'No servers loaded. Check login and backend connection.'}
+              </p>
             </div>
 
             <div>
@@ -125,6 +132,18 @@ export default function AutomationPage() {
               <div>
                 <label className="block text-xs font-medium text-gray-400 mb-1.5">Command</label>
                 <textarea className="input bg-gray-950 border-gray-700 text-white min-h-24 font-mono" value={command} onChange={e => setCommand(e.target.value)} placeholder="Disabled unless ALLOW_CUSTOM_COMMANDS=true on backend" />
+              </div>
+            )}
+
+            {action === 'package_upgrade' && (
+              <div className="text-xs text-amber-100 bg-amber-950/50 border border-amber-800 rounded-md p-3">
+                This runs the OS package upgrade on the selected server. Use Preview upgrade first when possible.
+              </div>
+            )}
+
+            {action === 'custom_command' && (
+              <div className="text-xs text-gray-400 bg-gray-950 border border-gray-700 rounded-md p-3">
+                Custom commands require backend environment variable <span className="font-mono text-gray-200">ALLOW_CUSTOM_COMMANDS=true</span>. Approved actions above do not need that flag.
               </div>
             )}
 

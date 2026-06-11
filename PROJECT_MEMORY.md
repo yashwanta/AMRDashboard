@@ -4,6 +4,7 @@
 - Local workspace: `C:\AMRDasboardCodex`
 - Active branch: `codex/log-dashboard-work`
 - Do not commit or push to `main`.
+- User preference: commit and push completed app changes to `codex/log-dashboard-work` unless they explicitly say not to.
 
 ## Current Local App
 

@@ -135,6 +135,7 @@ func (h *LogHandler) List(w http.ResponseWriter, r *http.Request) {
 		if shouldAnalyzeOOMRow(e) {
 			e.OOMAnalysis = h.analyzeLogEventOOM(r.Context(), e)
 		}
+		enrichLogEvent(&e)
 		events = append(events, e)
 	}
 	if events == nil {
@@ -144,6 +145,10 @@ func (h *LogHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func shouldAnalyzeOOMRow(ev models.LogEvent) bool {
+	raw := strings.ToLower(ev.RawLine + " " + ev.Message)
+	if strings.Contains(raw, "pveproxy/access.log") || strings.Contains(raw, "/api2/") {
+		return false
+	}
 	msg := strings.ToLower(ev.Message)
 	return ev.EventType == "vm_killed_by_oom" ||
 		ev.EventType == "host_memory_exhaustion" ||
@@ -758,6 +763,7 @@ func (h *LogHandler) ServerStats(w http.ResponseWriter, r *http.Request) {
 		Crashes      int    `json:"crashes"`
 		DiskErrors   int    `json:"disk_errors"`
 		Errors       int    `json:"errors"`
+		Warnings     int    `json:"warnings"`
 		Critical     int    `json:"critical"`
 	}
 
@@ -765,7 +771,7 @@ func (h *LogHandler) ServerStats(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var s ServerStat
 		rows.Scan(&s.ID, &s.Name, &s.Status, &s.RobotOffline, &s.RobotOnline,
-			&s.Crashes, &s.DiskErrors, &s.Errors, &s.Critical)
+			&s.Crashes, &s.DiskErrors, &s.Errors, &s.Warnings, &s.Critical)
 		results = append(results, s)
 	}
 	if results == nil {

@@ -1,11 +1,14 @@
 import { createContext, useContext, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { login as loginRequest } from './api/client'
+import type { UserRole } from './types'
 
 interface AuthState {
   token: string | null
   username: string | null
+  role: UserRole | null
   isAuthenticated: boolean
+  canAdmin: boolean
   login: (username: string, password: string) => Promise<void>
   logout: () => void
 }
@@ -13,27 +16,38 @@ interface AuthState {
 const AuthContext = createContext<AuthState | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState(() => localStorage.getItem('robowatch_token'))
-  const [username, setUsername] = useState(() => localStorage.getItem('robowatch_user'))
+  const [token, setToken] = useState(() => sessionStorage.getItem('siteops_token'))
+  const [username, setUsername] = useState(() => sessionStorage.getItem('siteops_user'))
+  const [role, setRole] = useState<UserRole | null>(() => sessionStorage.getItem('siteops_role') as UserRole | null)
 
   const value = useMemo<AuthState>(() => ({
     token,
     username,
+    role,
     isAuthenticated: Boolean(token),
+    canAdmin: role === 'Super Admin' || role === 'Global Admin' || role === 'Location Admin',
     login: async (nextUsername, password) => {
       const response = await loginRequest(nextUsername, password)
-      localStorage.setItem('robowatch_token', response.token)
-      localStorage.setItem('robowatch_user', response.username)
+      sessionStorage.setItem('siteops_token', response.token)
+      sessionStorage.setItem('siteops_user', response.username)
+      sessionStorage.setItem('siteops_role', response.role)
+      localStorage.removeItem('robowatch_token')
+      localStorage.removeItem('robowatch_user')
       setToken(response.token)
       setUsername(response.username)
+      setRole(response.role)
     },
     logout: () => {
+      sessionStorage.removeItem('siteops_token')
+      sessionStorage.removeItem('siteops_user')
+      sessionStorage.removeItem('siteops_role')
       localStorage.removeItem('robowatch_token')
       localStorage.removeItem('robowatch_user')
       setToken(null)
       setUsername(null)
+      setRole(null)
     },
-  }), [token, username])
+  }), [token, username, role])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

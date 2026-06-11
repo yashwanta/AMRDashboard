@@ -90,4 +90,34 @@ CREATE TABLE IF NOT EXISTS action_runs (
 
 CREATE INDEX IF NOT EXISTS idx_action_runs_server_id ON action_runs(server_id);
 CREATE INDEX IF NOT EXISTS idx_action_runs_created_at ON action_runs(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS rag_history (
+    id          BIGSERIAL PRIMARY KEY,
+    username    TEXT NOT NULL DEFAULT '',
+    question    TEXT NOT NULL,
+    answer      TEXT NOT NULL,
+    context_ids TEXT NOT NULL DEFAULT '',
+    model       TEXT NOT NULL DEFAULT 'siteops-log-search',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_history_created_at ON rag_history(created_at DESC);
+
+UPDATE log_events
+SET event_type='ssh_login_activity', severity='low'
+WHERE (raw_line ILIKE '%pveproxy/access.log%' OR message ILIKE '%pveproxy/access.log%')
+  AND (raw_line ILIKE '%/api2/%' OR message ILIKE '%/api2/%');
+
+CREATE TABLE IF NOT EXISTS app_users (
+    id            BIGSERIAL PRIMARY KEY,
+    username      TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role          TEXT NOT NULL,
+    location      TEXT NOT NULL DEFAULT '',
+    status        TEXT NOT NULL DEFAULT 'active',
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_users_role ON app_users(role);
 `

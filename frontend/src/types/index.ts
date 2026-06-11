@@ -73,6 +73,8 @@ export interface LogEvent {
   message: string
   source: string
   raw_line?: string
+  plain_english?: string
+  recommended_action?: string
   oom_analysis?: OOMAnalysis
   created_at: string
 }
@@ -160,7 +162,33 @@ export interface OOMAnalysis {
 export interface LoginResponse {
   token: string
   username: string
+  role: UserRole
   expires_at: string
+}
+
+export type UserRole =
+  | 'Super Admin'
+  | 'Global Admin'
+  | 'Global Admin Read Only'
+  | 'Location Admin'
+  | 'IT User'
+
+export interface AppUser {
+  id: number
+  username: string
+  role: UserRole
+  location: string
+  status: 'active' | 'disabled'
+  created_at: string
+  updated_at: string
+}
+
+export interface AppUserRequest {
+  username?: string
+  password?: string
+  role: UserRole
+  location?: string
+  status?: 'active' | 'disabled'
 }
 
 export type AutomationAction =
@@ -170,6 +198,10 @@ export type AutomationAction =
   | 'service_stop'
   | 'service_enable'
   | 'service_disable'
+  | 'package_update_cache'
+  | 'package_list_upgrades'
+  | 'package_upgrade_dry_run'
+  | 'package_upgrade'
   | 'change_password'
   | 'custom_command'
 
@@ -190,5 +222,32 @@ export interface ActionRun {
   status: 'success' | 'failed'
   output: string
   error?: string
+  created_at: string
+}
+
+export interface SiteOpsSourceEvent {
+  id: number
+  server_name: string
+  timestamp: string
+  event_type: string
+  severity: string
+  message: string
+  source: string
+  raw_line?: string
+  plain_english?: string
+  recommended_action?: string
+}
+
+export interface SiteOpsAnswer {
+  answer: string
+  model: string
+  source_events: SiteOpsSourceEvent[]
+}
+
+export interface SiteOpsHistoryItem {
+  id: number
+  question: string
+  answer: string
+  model: string
   created_at: string
 }

@@ -1,13 +1,14 @@
 import axios from 'axios'
 import type {
   Server, ServerRequest, LogEvent, DashboardStats,
-  TimelinePoint, SyncJob, IncidentSummary, ActionRun, ActionRunRequest, LoginResponse
+  TimelinePoint, SyncJob, IncidentSummary, ActionRun, ActionRunRequest, LoginResponse,
+  SiteOpsAnswer, SiteOpsHistoryItem, AppUser, AppUserRequest
 } from '../types'
 
 const api = axios.create({ baseURL: '/api' })
 
 api.interceptors.request.use(config => {
-  const token = localStorage.getItem('robowatch_token')
+  const token = sessionStorage.getItem('siteops_token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -18,6 +19,9 @@ api.interceptors.response.use(
   response => response,
   error => {
     if (error.response?.status === 401) {
+      sessionStorage.removeItem('siteops_token')
+      sessionStorage.removeItem('siteops_user')
+      sessionStorage.removeItem('siteops_role')
       localStorage.removeItem('robowatch_token')
       localStorage.removeItem('robowatch_user')
       if (window.location.pathname !== '/login') {
@@ -32,7 +36,7 @@ api.interceptors.response.use(
 export const login = (username: string, password: string) =>
   api.post<LoginResponse>('/auth/login', { username, password }).then(r => r.data)
 
-export const getMe = () => api.get<{ username: string }>('/auth/me').then(r => r.data)
+export const getMe = () => api.get<{ username: string; role: string }>('/auth/me').then(r => r.data)
 
 // Servers
 export const getServers = () => api.get<Server[]>('/servers').then(r => r.data)
@@ -90,3 +94,16 @@ export const runAction = (data: ActionRunRequest) =>
 
 export const getActionHistory = () =>
   api.get<ActionRun[]>('/actions/history').then(r => r.data)
+
+// Ask SiteOps
+export const askSiteOps = (question: string) =>
+  api.post<SiteOpsAnswer>('/rag/query', { question }).then(r => r.data)
+
+export const getSiteOpsHistory = () =>
+  api.get<SiteOpsHistoryItem[]>('/rag/history').then(r => r.data)
+
+// Setup / users
+export const getUsers = () => api.get<AppUser[]>('/users').then(r => r.data)
+export const createUser = (data: AppUserRequest) => api.post<AppUser>('/users', data).then(r => r.data)
+export const updateUser = (id: number, data: AppUserRequest) => api.put<AppUser>(`/users/${id}`, data).then(r => r.data)
+export const deleteUser = (id: number) => api.delete(`/users/${id}`)

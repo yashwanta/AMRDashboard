@@ -25,17 +25,19 @@ type Server struct {
 }
 
 type LogEvent struct {
-	ID          int64        `json:"id"`
-	ServerID    int          `json:"server_id"`
-	ServerName  string       `json:"server_name,omitempty"`
-	Timestamp   time.Time    `json:"timestamp"`
-	EventType   string       `json:"event_type"`
-	Severity    string       `json:"severity"`
-	Message     string       `json:"message"`
-	Source      string       `json:"source"`
-	RawLine     string       `json:"raw_line,omitempty"`
-	OOMAnalysis *OOMAnalysis `json:"oom_analysis,omitempty"`
-	CreatedAt   time.Time    `json:"created_at"`
+	ID                int64        `json:"id"`
+	ServerID          int          `json:"server_id"`
+	ServerName        string       `json:"server_name,omitempty"`
+	Timestamp         time.Time    `json:"timestamp"`
+	EventType         string       `json:"event_type"`
+	Severity          string       `json:"severity"`
+	Message           string       `json:"message"`
+	Source            string       `json:"source"`
+	RawLine           string       `json:"raw_line,omitempty"`
+	PlainEnglish      string       `json:"plain_english,omitempty"`
+	RecommendedAction string       `json:"recommended_action,omitempty"`
+	OOMAnalysis       *OOMAnalysis `json:"oom_analysis,omitempty"`
+	CreatedAt         time.Time    `json:"created_at"`
 }
 
 type SyncJob struct {
