@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, Server, FileText, RefreshCw, Wrench, LogOut, Bot, LogIn, Settings, ServerCog } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../auth'
@@ -36,6 +36,7 @@ function RoboWatchLogo() {
 
 export default function Sidebar() {
   const auth = useAuth()
+  const navigate = useNavigate()
 
   return (
     <aside className="w-56 flex-shrink-0 bg-gray-900 text-gray-300 flex flex-col">
@@ -106,7 +107,10 @@ export default function Sidebar() {
               <div className="text-gray-500">{auth.role}</div>
             </div>
             <button
-              onClick={auth.logout}
+              onClick={() => {
+                auth.logout()
+                navigate('/')
+              }}
               className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
             >
               <LogOut size={14} />
