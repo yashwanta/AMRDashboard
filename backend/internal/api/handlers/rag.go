@@ -63,6 +63,11 @@ func (h *RAGHandler) Query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if isPatchInventoryQuestion(question) {
+		h.answerPatchInventory(w, r, question)
+		return
+	}
+
 	events, err := h.searchEvents(r, question)
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
@@ -84,6 +89,57 @@ func (h *RAGHandler) Query(w http.ResponseWriter, r *http.Request) {
 		Answer:       answer,
 		Model:        "siteops-log-search",
 		SourceEvents: events,
+	})
+}
+
+type patchRunSummary struct {
+	ServerName string
+	Action     string
+	Status     string
+	Output     string
+	Error      string
+	CreatedAt  time.Time
+}
+
+func (h *RAGHandler) answerPatchInventory(w http.ResponseWriter, r *http.Request, question string) {
+	rows, err := h.db.Query(r.Context(), `
+		SELECT DISTINCT ON (ar.server_id)
+			s.name, ar.action, ar.status, ar.output, ar.error, ar.created_at
+		FROM action_runs ar
+		JOIN servers s ON s.id = ar.server_id
+		WHERE ar.action IN ('package_list_upgrades', 'package_upgrade_dry_run', 'package_update_cache', 'package_upgrade')
+		ORDER BY ar.server_id, ar.created_at DESC`)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	runs := []patchRunSummary{}
+	for rows.Next() {
+		var run patchRunSummary
+		if err := rows.Scan(&run.ServerName, &run.Action, &run.Status, &run.Output, &run.Error, &run.CreatedAt); err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		runs = append(runs, run)
+	}
+	if err := rows.Err(); err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	answer := buildPatchInventoryAnswer(runs)
+	username, _ := usernameFromRequest(r)
+	_, _ = h.db.Exec(r.Context(), `
+		INSERT INTO rag_history (username, question, answer, context_ids, model)
+		VALUES ($1,$2,$3,$4,$5)`,
+		username, question, answer, "", "siteops-patch-inventory")
+
+	jsonOK(w, ragQueryResponse{
+		Answer:       answer,
+		Model:        "siteops-patch-inventory",
+		SourceEvents: []ragSourceEvent{},
 	})
 }
 
@@ -191,6 +247,97 @@ func meaningfulTerms(question string) []string {
 		}
 	}
 	return terms
+}
+
+func isPatchInventoryQuestion(question string) bool {
+	q := strings.ToLower(question)
+	patchWords := []string{"patch", "patching", "update", "updates", "upgrade", "upgrades", "security update", "missing"}
+	for _, word := range patchWords {
+		if strings.Contains(q, word) {
+			return strings.Contains(q, "server") ||
+				strings.Contains(q, "endpoint") ||
+				strings.Contains(q, "missing") ||
+				strings.Contains(q, "available") ||
+				strings.Contains(q, "need") ||
+				strings.Contains(q, "pending")
+		}
+	}
+	return false
+}
+
+func buildPatchInventoryAnswer(runs []patchRunSummary) string {
+	if len(runs) == 0 {
+		return "I do not have patch inventory yet. Run OpsForge > List available upgrades or Preview upgrade for the endpoints you want to check, then ask this question again. I will not guess from unrelated application logs."
+	}
+
+	missing := []string{}
+	clean := []string{}
+	failed := []string{}
+	unknown := []string{}
+	latest := runs[0].CreatedAt
+	for _, run := range runs {
+		if run.CreatedAt.After(latest) {
+			latest = run.CreatedAt
+		}
+		switch classifyPatchRun(run) {
+		case "missing":
+			missing = append(missing, run.ServerName)
+		case "clean":
+			clean = append(clean, run.ServerName)
+		case "failed":
+			failed = append(failed, run.ServerName)
+		default:
+			unknown = append(unknown, run.ServerName)
+		}
+	}
+
+	parts := []string{fmt.Sprintf("Based on OpsForge patch checks, I found patch inventory for %d server(s). Latest check: %s.", len(runs), latest.Format("Jan 2, 2006 3:04 PM"))}
+	if len(missing) > 0 {
+		parts = append(parts, "Likely missing patches: "+strings.Join(missing, ", ")+".")
+	}
+	if len(clean) > 0 {
+		parts = append(parts, "No available upgrades detected: "+strings.Join(clean, ", ")+".")
+	}
+	if len(failed) > 0 {
+		parts = append(parts, "Patch check failed or could not complete: "+strings.Join(failed, ", ")+".")
+	}
+	if len(unknown) > 0 {
+		parts = append(parts, "Patch status needs review because the command output was inconclusive: "+strings.Join(unknown, ", ")+".")
+	}
+	parts = append(parts, "Use OpsForge > List available upgrades or Preview upgrade to refresh this inventory before making changes.")
+	return strings.Join(parts, " ")
+}
+
+func classifyPatchRun(run patchRunSummary) string {
+	if run.Status != "success" {
+		return "failed"
+	}
+	text := strings.ToLower(run.Output + "\n" + run.Error)
+	noUpgradeSignals := []string{
+		"0 upgraded",
+		"nothing to do",
+		"no packages marked for update",
+		"no packages needed for security",
+		"no packages marked for upgrade",
+	}
+	for _, signal := range noUpgradeSignals {
+		if strings.Contains(text, signal) {
+			return "clean"
+		}
+	}
+	if strings.TrimSpace(run.Output) == "" {
+		return "unknown"
+	}
+	upgradeSignals := []string{"upgradable", "upgrades", "upgrade", "security", "updates", ".x86_64", ".noarch", ".el", "/"}
+	for _, signal := range upgradeSignals {
+		if strings.Contains(text, signal) {
+			if run.Action == "package_update_cache" {
+				return "unknown"
+			}
+			return "missing"
+		}
+	}
+	return "unknown"
 }
 
 func buildSiteOpsAnswer(question string, events []ragSourceEvent) string {
