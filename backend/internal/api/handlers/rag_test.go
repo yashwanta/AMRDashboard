@@ -49,3 +49,52 @@ func TestBuildPatchInventoryAnswerSummarizesRuns(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildSiteOpsAnswerExplainsRobotDisconnect(t *testing.T) {
+	events := []ragSourceEvent{
+		{
+			ServerName: "Hop-Fleetmanager",
+			Timestamp:  time.Date(2026, 6, 11, 14, 37, 22, 0, time.UTC),
+			EventType:  "error",
+			Severity:   "high",
+			Message:    "Open file failed[/opt/Roboshop/bin/location/appInfo/robots///models/robot.cp]:No such file or directory",
+			Source:     "roboshop_app",
+			RawLine:    "[20260611 064813.141][Roboshop][0][warning][writeJsonFile:337] Open file failed[/opt/Roboshop/bin/location/appInfo/robots///models/robot.cp]:No such file or directory",
+		},
+		{
+			ServerName:        "Hop-Fleetmanager",
+			Timestamp:         time.Date(2026, 6, 11, 14, 37, 21, 0, time.UTC),
+			EventType:         "robot_offline",
+			Severity:          "high",
+			Message:           "[20260611 064338.615][Roboshop][19204][info][slotTcpStateChange] [Local::0][Server:10.216.35.5:19204][Tcp:none] SocketState:UnconnectedState",
+			Source:            "roboshop_app",
+			RawLine:           "[20260611 064338.615][Roboshop][19204][info][slotTcpStateChange] [Local::0][Server:10.216.35.5:19204][Tcp:none] SocketState:UnconnectedState",
+			PlainEnglish:      "Robot 10.216.35.5 is not connected to the server.",
+			RecommendedAction: "Verify robot power, network cabling or Wi-Fi, and the robot service state.",
+		},
+		{
+			ServerName: "Hop-Fleetmanager",
+			Timestamp:  time.Date(2026, 6, 11, 14, 37, 20, 0, time.UTC),
+			EventType:  "robot_offline",
+			Severity:   "high",
+			Message:    "[20260611 064338.614][Roboshop][0][warning][setLastError:1622] Add device failed:[10.216.35.5:19204]",
+			Source:     "roboshop_app",
+			RawLine:    "[20260611 064338.614][Roboshop][0][warning][setLastError:1622] Add device failed:[10.216.35.5:19204]",
+		},
+	}
+
+	answer := buildSiteOpsAnswer("Why Robot was Disconnected?", events)
+	for _, want := range []string{
+		"Robot 10.216.35.5:19204 appears disconnected",
+		"FleetManager reported the TCP socket as unconnected",
+		"FleetManager could not add or reconnect the robot device",
+		"Raw logs are kept below",
+	} {
+		if !strings.Contains(answer, want) {
+			t.Fatalf("answer missing %q: %q", want, answer)
+		}
+	}
+	if strings.Contains(answer, "The strongest signal is") {
+		t.Fatalf("robot disconnect answer should not use generic wording: %q", answer)
+	}
+}
