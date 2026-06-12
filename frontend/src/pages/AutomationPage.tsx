@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
-import { Play, Terminal, Wrench, KeyRound, ShieldCheck, X } from 'lucide-react'
+import { Play, Terminal, Wrench, KeyRound } from 'lucide-react'
 import { getActionHistory, getServers, runAction } from '../api/client'
 import type { ActionRunRequest, AutomationAction } from '../types'
 
@@ -17,12 +17,11 @@ const actionLabels: Record<AutomationAction, string> = {
   package_upgrade_dry_run: 'Preview upgrade',
   package_upgrade: 'sudo apt/dnf upgrade',
   package_install: 'sudo apt/dnf install package',
-  remediate_cve_2026_31431_linux_signed: 'Remediate CVE-2026-31431',
-  remediate_cve_2026_43494_linux_signed_upgrade: 'Remediate CVE-2026-43494',
+  remediate_cve_2026_31431_linux_signed: 'Remediate CVE-2026-31431 kernel packages',
+  remediate_cve_2026_43494_linux_signed_upgrade: 'Remediate CVE-2026-43494 kernel packages',
   remediate_cve_2026_43494_ubuntu_generic_kernel: 'Remediate CVE-2026-43494 Ubuntu generic kernel',
   system_reboot: 'Restart server/workstation',
   approved_custom_command: 'Approved custom command',
-  change_password: 'Change user password',
   custom_command: 'Unrestricted custom command',
 }
 
@@ -49,19 +48,16 @@ const sudoActions: AutomationAction[] = [
   'remediate_cve_2026_43494_ubuntu_generic_kernel',
   'system_reboot',
   'approved_custom_command',
-  'change_password',
 ]
 
 const approvedCommandTemplates = [
-  { label: 'CVE-2026-31431 linux-signed', command: 'sudo apt-get update && sudo apt-get install -y linux-signed' },
-  { label: 'CVE-2026-43494 linux-signed upgrade', command: 'sudo apt-get update && sudo apt-get install -y --only-upgrade linux-signed' },
-  { label: 'CVE-2026-43494 Ubuntu generic kernel', command: 'sudo apt-get update && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade linux-generic linux-image-generic linux-headers-generic' },
-  { label: 'Update apt cache', command: 'sudo apt-get update' },
-  { label: 'Install package', command: 'sudo apt-get install -y ' },
-  { label: 'Restart service', command: 'sudo systemctl restart ' },
-  { label: 'Restart server/workstation', command: 'sudo systemctl reboot' },
+  { label: 'Update apt cache', command: 'apt-get update' },
+  { label: 'Install package', command: 'apt-get install -y ' },
+  { label: 'Restart service', command: 'systemctl restart ' },
+  { label: 'Restart server/workstation', command: 'systemctl reboot' },
   { label: 'Disk usage', command: 'df -h' },
   { label: 'Memory', command: 'free -h' },
+  { label: 'Kernel version', command: 'uname -r' },
 ]
 
 export default function AutomationPage() {
@@ -71,11 +67,7 @@ export default function AutomationPage() {
   const [serverId, setServerId] = useState<number>(0)
   const [action, setAction] = useState<AutomationAction>('service_status')
   const [serviceName, setServiceName] = useState('ssh')
-  const [username, setUsername] = useState('')
-  const [newPassword, setNewPassword] = useState('')
   const [packageName, setPackageName] = useState('')
-  const [sudoPassword, setSudoPassword] = useState('')
-  const [sudoOpen, setSudoOpen] = useState(false)
   const [command, setCommand] = useState('')
   const [lastOutput, setLastOutput] = useState('')
   const [activeRunId, setActiveRunId] = useState<number | null>(null)
@@ -120,47 +112,25 @@ export default function AutomationPage() {
     return () => window.clearInterval(timer)
   }, [activeRun?.status, qc, runStartedAt])
 
-  function buildPayload(sudoPasswordOverride = '') {
+  function buildPayload() {
     const payload: ActionRunRequest = { server_id: serverId, action }
     if (serviceActions.includes(action)) payload.service_name = serviceName
-    if (action === 'change_password') {
-      payload.username = username
-      payload.new_password = newPassword
-    }
     if (action === 'package_install') payload.package_name = packageName
-    if (sudoPasswordOverride) payload.sudo_password = sudoPasswordOverride
     if (action === 'custom_command' || action === 'approved_custom_command') payload.command = command
     return payload
   }
 
   function submit() {
-    if (requiresSudoPrompt) {
-      setSudoPassword('')
-      setSudoOpen(true)
-      return
-    }
-    mutation.mutate(buildPayload())
-  }
-
-  function runWithSudo() {
-    setSudoOpen(false)
-    mutation.mutate(buildPayload(sudoPassword))
-  }
-
-  function runWithoutSudoPassword() {
-    setSudoOpen(false)
     mutation.mutate(buildPayload())
   }
 
   const actionNeedsService = serviceActions.includes(action)
   const actionNeedsPackage = action === 'package_install'
   const actionNeedsSudo = sudoActions.includes(action)
-  const requiresSudoPrompt = actionNeedsSudo && selectedServer?.username !== 'root'
   const formReady =
     serverId > 0 &&
     (!actionNeedsService || serviceName.trim() !== '') &&
     (!actionNeedsPackage || packageName.trim() !== '') &&
-    (action !== 'change_password' || (username.trim() !== '' && newPassword !== '')) &&
     ((action !== 'custom_command' && action !== 'approved_custom_command') || command.trim() !== '')
   const canRun = formReady && !mutation.isPending
 
@@ -215,19 +185,6 @@ export default function AutomationPage() {
               </div>
             )}
 
-            {action === 'change_password' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1.5">User</label>
-                  <input className="input bg-gray-950 border-gray-700 text-white" value={username} onChange={e => setUsername(e.target.value)} placeholder="robotuser" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1.5">New password</label>
-                  <input className="input bg-gray-950 border-gray-700 text-white" type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
-                </div>
-              </div>
-            )}
-
             {action === 'custom_command' && (
               <div>
                 <label className="block text-xs font-medium text-gray-400 mb-1.5">Command</label>
@@ -243,7 +200,7 @@ export default function AutomationPage() {
                     className="input bg-gray-950 border-gray-700 text-white min-h-24 font-mono"
                     value={command}
                     onChange={e => setCommand(e.target.value)}
-                    placeholder="sudo apt-get update && sudo apt-get install -y linux-signed"
+                    placeholder="uname -r"
                   />
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -259,7 +216,7 @@ export default function AutomationPage() {
                   ))}
                 </div>
                 <div className="text-xs text-gray-400 bg-gray-950 border border-gray-700 rounded-md p-3">
-                  Approved custom commands allow package, systemctl, journal, disk, memory, uptime, and uname commands. Full unrestricted custom commands still require <span className="font-mono text-gray-200">ALLOW_CUSTOM_COMMANDS=true</span>.
+                  Approved custom commands allow package, systemctl, journal, disk, memory, uptime, and uname commands. Privileged commands require the SSH account to be root or have passwordless sudo configured outside this app. Full unrestricted custom commands still require <span className="font-mono text-gray-200">ALLOW_CUSTOM_COMMANDS=true</span>.
                 </div>
               </div>
             )}
@@ -272,19 +229,19 @@ export default function AutomationPage() {
 
             {action === 'remediate_cve_2026_31431_linux_signed' && (
               <div className="text-xs text-amber-100 bg-amber-950/50 border border-amber-800 rounded-md p-3">
-                Runs: <span className="font-mono">sudo apt-get update && sudo apt-get install -y linux-signed</span>. This remediation is for Ubuntu/Debian apt systems.
+                Runs an Ubuntu apt remediation that updates package cache, detects installed kernel meta/image packages, upgrades only those packages, then prints installed kernels, running kernel, and reboot-required status.
               </div>
             )}
 
             {action === 'remediate_cve_2026_43494_linux_signed_upgrade' && (
               <div className="text-xs text-amber-100 bg-amber-950/50 border border-amber-800 rounded-md p-3">
-                Runs: <span className="font-mono">sudo apt-get update && sudo apt-get install -y --only-upgrade linux-signed</span>. This remediation is for Ubuntu 24.04 apt systems.
+                Runs an Ubuntu 24.04 apt remediation that detects installed kernel meta/image packages, upgrades only those packages, then prints installed kernels, running kernel, and reboot-required status.
               </div>
             )}
 
             {action === 'remediate_cve_2026_43494_ubuntu_generic_kernel' && (
               <div className="text-xs text-amber-100 bg-amber-950/50 border border-amber-800 rounded-md p-3">
-                Runs: <span className="font-mono">sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade linux-generic linux-image-generic linux-headers-generic</span>. This remediation is for Ubuntu 24.2/24.04 generic kernel systems.
+                Runs an Ubuntu 24.2/24.04 generic-kernel remediation that detects installed kernel packages, upgrades only applicable kernel packages, then prints installed kernels, running kernel, and reboot-required status.
               </div>
             )}
 
@@ -308,8 +265,8 @@ export default function AutomationPage() {
             {selectedServer && (
               <div className="text-xs text-gray-400 border border-gray-700 rounded-md p-3">
                 Target: <span className="text-gray-200">{selectedServer.username}@{selectedServer.host}:{selectedServer.port}</span>
-                {actionNeedsSudo && selectedServer.username !== 'root' && (
-                  <div className="mt-2 text-amber-200">This action may require sudo/root authentication.</div>
+                {actionNeedsSudo && (
+                  <div className="mt-2 text-amber-200">Privileged actions require root or passwordless sudo on the target. This app does not collect sudo passwords.</div>
                 )}
               </div>
             )}
@@ -368,48 +325,6 @@ export default function AutomationPage() {
         </section>
       </div>
 
-      {sudoOpen && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-md">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700">
-              <div className="flex items-center gap-2">
-                <ShieldCheck size={17} className="text-amber-300" />
-                <h2 className="font-semibold text-white">Sudo authentication</h2>
-              </div>
-              <button onClick={() => setSudoOpen(false)} className="text-gray-400 hover:text-white">
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-5 space-y-4">
-              <p className="text-sm text-gray-300">
-                {selectedServer?.username}@{selectedServer?.host} may require a sudo/root password for <span className="text-white">{actionLabels[action]}</span>.
-              </p>
-              <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1.5">Sudo / root password</label>
-                <input
-                  className="input bg-gray-950 border-gray-700 text-white"
-                  type="password"
-                  value={sudoPassword}
-                  onChange={e => setSudoPassword(e.target.value)}
-                  autoFocus
-                />
-                <p className="text-xs text-gray-500 mt-1.5">This password is used only for this run and is not saved.</p>
-              </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                <button onClick={() => setSudoOpen(false)} className="text-sm px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200">
-                  Cancel
-                </button>
-                <button onClick={runWithoutSudoPassword} className="text-sm px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200">
-                  Run without password
-                </button>
-                <button onClick={runWithSudo} disabled={!sudoPassword} className="btn-primary disabled:opacity-50">
-                  Run with sudo password
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

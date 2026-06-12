@@ -108,9 +108,11 @@ npm run dev
 | `SESSION_SECRET` | `ENCRYPTION_KEY` | Secret used to sign web login tokens |
 | `ADMIN_USERNAME` | `admin` | Web login username |
 | `ADMIN_PASSWORD` | `admin` | Web login password; change this before sharing the app |
-| `ALLOW_CUSTOM_COMMANDS` | `false` | Enables the Automation page custom-command action |
+| `ALLOW_CUSTOM_COMMANDS` | `false` | Enables unrestricted Automation commands; approved actions do not need this |
 | `SCHEDULE_AM` | `0 6 * * *` | Morning auto-sync (6 AM) |
 | `SCHEDULE_PM` | `0 18 * * *` | Evening auto-sync (6 PM) |
+
+OpsForge security note: the app does not collect, store, echo, or pipe sudo passwords. Privileged remediation actions require the target SSH account to be `root` or to have passwordless sudo configured outside RoboWatch. Remediation scripts check for root privileges before running package-manager commands.
 
 ---
 

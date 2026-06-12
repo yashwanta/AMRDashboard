@@ -210,17 +210,13 @@ export type AutomationAction =
   | 'remediate_cve_2026_43494_ubuntu_generic_kernel'
   | 'system_reboot'
   | 'approved_custom_command'
-  | 'change_password'
   | 'custom_command'
 
 export interface ActionRunRequest {
   server_id: number
   action: AutomationAction
   service_name?: string
-  username?: string
-  new_password?: string
   package_name?: string
-  sudo_password?: string
   command?: string
 }
 

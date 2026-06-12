@@ -22,14 +22,11 @@ type ActionHandler struct {
 }
 
 type actionRunRequest struct {
-	ServerID     int    `json:"server_id"`
-	Action       string `json:"action"`
-	ServiceName  string `json:"service_name,omitempty"`
-	Username     string `json:"username,omitempty"`
-	NewPassword  string `json:"new_password,omitempty"`
-	PackageName  string `json:"package_name,omitempty"`
-	SudoPassword string `json:"sudo_password,omitempty"`
-	Command      string `json:"command,omitempty"`
+	ServerID    int    `json:"server_id"`
+	Action      string `json:"action"`
+	ServiceName string `json:"service_name,omitempty"`
+	PackageName string `json:"package_name,omitempty"`
+	Command     string `json:"command,omitempty"`
 }
 
 type actionRunResponse struct {
@@ -149,12 +146,12 @@ func (h *ActionHandler) buildCommand(req actionRunRequest) (string, error) {
 		if action == "service_status" {
 			return command, nil
 		}
-		return sudoCommand(req.SudoPassword, command), nil
+		return rootRequiredCommand(command), nil
 	case "package_update_cache":
 		return packageManagerCommand(
-			sudoCommand(req.SudoPassword, "apt-get update"),
-			sudoCommand(req.SudoPassword, "dnf -y makecache"),
-			sudoCommand(req.SudoPassword, "yum -y makecache"),
+			rootRequiredScript(aptLockCheckScript()+"\napt-get update"),
+			rootRequiredCommand("dnf -y makecache"),
+			rootRequiredCommand("yum -y makecache"),
 		), nil
 	case "package_list_upgrades":
 		return packageManagerCommand("apt list --upgradable 2>/dev/null || true", "dnf check-update || true", "yum check-update || true"), nil
@@ -162,9 +159,9 @@ func (h *ActionHandler) buildCommand(req actionRunRequest) (string, error) {
 		return packageManagerCommand("apt-get -s upgrade", "dnf -y --assumeno upgrade", "yum -y --assumeno update"), nil
 	case "package_upgrade":
 		return packageManagerCommand(
-			sudoCommand(req.SudoPassword, "env DEBIAN_FRONTEND=noninteractive apt-get -y upgrade"),
-			sudoCommand(req.SudoPassword, "dnf -y upgrade"),
-			sudoCommand(req.SudoPassword, "yum -y update"),
+			rootRequiredScript(aptLockCheckScript()+"\nDEBIAN_FRONTEND=noninteractive apt-get -y upgrade"),
+			rootRequiredCommand("dnf -y upgrade"),
+			rootRequiredCommand("yum -y update"),
 		), nil
 	case "package_install":
 		pkg := strings.TrimSpace(req.PackageName)
@@ -172,31 +169,24 @@ func (h *ActionHandler) buildCommand(req actionRunRequest) (string, error) {
 			return "", fmt.Errorf("valid package name is required")
 		}
 		return packageManagerCommand(
-			sudoCommand(req.SudoPassword, "env DEBIAN_FRONTEND=noninteractive apt-get install -y "+shellQuote(pkg)),
-			sudoCommand(req.SudoPassword, "dnf install -y "+shellQuote(pkg)),
-			sudoCommand(req.SudoPassword, "yum install -y "+shellQuote(pkg)),
+			rootRequiredScript(aptLockCheckScript()+"\nDEBIAN_FRONTEND=noninteractive apt-get install -y "+shellQuote(pkg)),
+			rootRequiredCommand("dnf install -y "+shellQuote(pkg)),
+			rootRequiredCommand("yum install -y "+shellQuote(pkg)),
 		), nil
 	case "remediate_cve_2026_31431_linux_signed":
-		return cve202631431Command(req.SudoPassword), nil
+		return cve202631431Command(), nil
 	case "remediate_cve_2026_43494_linux_signed_upgrade":
-		return cve202643494Command(req.SudoPassword), nil
+		return cve202643494Command(), nil
 	case "remediate_cve_2026_43494_ubuntu_generic_kernel":
-		return cve202643494GenericKernelCommand(req.SudoPassword), nil
+		return cve202643494GenericKernelCommand(), nil
 	case "system_reboot":
-		return sudoCommand(req.SudoPassword, "sh -c 'nohup systemctl reboot >/dev/null 2>&1 &'"), nil
+		return rootRequiredCommand("sh -c 'nohup systemctl reboot >/dev/null 2>&1 &'"), nil
 	case "approved_custom_command":
 		command := strings.TrimSpace(req.Command)
 		if command == "" {
 			return "", fmt.Errorf("command is required")
 		}
-		return approvedCustomCommand(req.SudoPassword, command)
-	case "change_password":
-		username := strings.TrimSpace(req.Username)
-		if !validLinuxName(username) || req.NewPassword == "" {
-			return "", fmt.Errorf("valid username and new password are required")
-		}
-		pair := username + ":" + req.NewPassword
-		return fmt.Sprintf("printf %%s %s | %s", shellQuote(pair), sudoCommand(req.SudoPassword, "chpasswd")), nil
+		return approvedCustomCommand(command)
 	case "custom_command":
 		if !h.allowCustomCommands {
 			return "", fmt.Errorf("custom commands are disabled on this server")
@@ -284,50 +274,100 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
-func sudoCommand(password, command string) string {
-	password = strings.TrimSpace(password)
-	if password == "" {
-		return "sudo " + command
-	}
-	return fmt.Sprintf("printf '%%s\\n' %s | sudo -S -p '' %s", shellQuote(password), command)
-}
-
 func auditCommand(command string, req actionRunRequest) string {
-	if strings.TrimSpace(req.SudoPassword) != "" {
-		command = strings.ReplaceAll(command, shellQuote(strings.TrimSpace(req.SudoPassword)), "'******'")
-	}
-	if req.NewPassword != "" {
-		command = strings.ReplaceAll(command, req.NewPassword, "******")
-		command = strings.ReplaceAll(command, shellQuote(req.Username+":"+req.NewPassword), "'"+req.Username+":******'")
-	}
 	return command
 }
 
-func cve202631431Command(password string) string {
+func rootRequiredScript(body string) string {
+	script := "if [ \"$(id -u)\" -ne 0 ]; then echo \"Run this script with sudo or as root\"; exit 1; fi\n" + body
+	quoted := shellQuote(script)
+	return "if [ \"$(id -u)\" -eq 0 ]; then sh -c " + quoted + "; else sudo -n sh -c " + quoted + "; fi"
+}
+
+func rootRequiredCommand(command string) string {
+	return rootRequiredScript(command)
+}
+
+func aptLockCheckScript() string {
+	return `if command -v fuser >/dev/null 2>&1; then
+  for lock in /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/cache/apt/archives/lock; do
+    if [ -e "$lock" ] && fuser "$lock" >/dev/null 2>&1; then
+      echo "APT/dpkg lock is active: $lock"
+      exit 3
+    fi
+  done
+fi`
+}
+
+func aptKernelRemediationScript(cve string) string {
+	return fmt.Sprintf(`set -eu
+echo "%s Ubuntu apt kernel remediation started."
+%s
+echo "Updating apt package cache..."
+DEBIAN_FRONTEND=noninteractive apt-get update
+packages=""
+for pkg in linux-generic linux-image-generic linux-headers-generic linux-generic-hwe-24.04 linux-image-generic-hwe-24.04 linux-headers-generic-hwe-24.04; do
+  if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
+    packages="$packages $pkg"
+  fi
+done
+if [ -z "$(echo "$packages" | xargs)" ]; then
+  image_packages="$(dpkg-query -W -f='${Package}\n' 'linux-image-[0-9]*' 2>/dev/null | sort -u || true)"
+  if [ -n "$image_packages" ]; then
+    packages="$image_packages"
+  fi
+fi
+packages="$(echo "$packages" | xargs || true)"
+if [ -z "$packages" ]; then
+  echo "No supported installed Ubuntu kernel meta/image package found to upgrade."
+  echo "Installed kernel-related packages:"
+  dpkg-query -W -f='${Package} ${Version}\n' 'linux-generic*' 'linux-image*' 'linux-headers*' 2>/dev/null | sort || true
+  echo "Running kernel:"
+  uname -r
+  exit 2
+fi
+echo "Upgrading detected kernel packages: $packages"
+if ! DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade $packages; then
+  echo "Kernel package upgrade failed."
+  exit 4
+fi
+echo "Installed kernel packages after remediation:"
+dpkg-query -W -f='${Package} ${Version}\n' 'linux-generic*' 'linux-image*' 'linux-headers*' 2>/dev/null | sort || true
+echo "Running kernel:"
+uname -r
+if [ -f /var/run/reboot-required ]; then
+  echo "Reboot required: yes"
+  if [ -f /var/run/reboot-required.pkgs ]; then
+    echo "Packages requiring reboot:"
+    cat /var/run/reboot-required.pkgs
+  fi
+else
+  echo "Reboot required: no"
+fi
+echo "Package upgrade completed. Review reboot status before declaring %s remediated."`, cve, aptLockCheckScript(), cve)
+}
+
+func kernelRemediationCommand(cve string) string {
 	return packageManagerCommand(
-		sudoCommand(password, "apt-get update")+" && "+sudoCommand(password, "env DEBIAN_FRONTEND=noninteractive apt-get install -y linux-signed"),
-		"echo 'CVE-2026-31431 linux-signed remediation is currently defined for Ubuntu/Debian apt systems.'; exit 2",
-		"echo 'CVE-2026-31431 linux-signed remediation is currently defined for Ubuntu/Debian apt systems.'; exit 2",
+		rootRequiredScript(aptKernelRemediationScript(cve)),
+		"echo '"+cve+" remediation is currently defined for Ubuntu/Debian apt systems. dnf detected; no action taken.'; exit 2",
+		"echo '"+cve+" remediation is currently defined for Ubuntu/Debian apt systems. yum detected; no action taken.'; exit 2",
 	)
 }
 
-func cve202643494Command(password string) string {
-	return packageManagerCommand(
-		sudoCommand(password, "apt-get update")+" && "+sudoCommand(password, "env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade linux-signed"),
-		"echo 'CVE-2026-43494 linux-signed remediation is currently defined for Ubuntu 24.04/Debian apt systems.'; exit 2",
-		"echo 'CVE-2026-43494 linux-signed remediation is currently defined for Ubuntu 24.04/Debian apt systems.'; exit 2",
-	)
+func cve202631431Command() string {
+	return kernelRemediationCommand("CVE-2026-31431")
 }
 
-func cve202643494GenericKernelCommand(password string) string {
-	return packageManagerCommand(
-		sudoCommand(password, "apt-get update")+" && "+sudoCommand(password, "env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade linux-generic linux-image-generic linux-headers-generic"),
-		"echo 'CVE-2026-43494 generic kernel remediation is currently defined for Ubuntu 24.2/24.04 apt systems.'; exit 2",
-		"echo 'CVE-2026-43494 generic kernel remediation is currently defined for Ubuntu 24.2/24.04 apt systems.'; exit 2",
-	)
+func cve202643494Command() string {
+	return kernelRemediationCommand("CVE-2026-43494")
 }
 
-func approvedCustomCommand(password, command string) (string, error) {
+func cve202643494GenericKernelCommand() string {
+	return kernelRemediationCommand("CVE-2026-43494")
+}
+
+func approvedCustomCommand(command string) (string, error) {
 	if strings.ContainsAny(command, "|;`$<>") {
 		return "", fmt.Errorf("approved custom commands cannot contain pipes, semicolons, shell expansion, or redirects")
 	}
@@ -351,7 +391,7 @@ func approvedCustomCommand(password, command string) (string, error) {
 			}
 		}
 		if commandNeedsSudo(part) {
-			out = append(out, sudoCommand(password, part))
+			out = append(out, rootRequiredCommand(part))
 		} else {
 			out = append(out, part)
 		}

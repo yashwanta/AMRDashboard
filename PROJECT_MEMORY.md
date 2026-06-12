@@ -32,8 +32,9 @@
 - Login page and protected API routes.
 - Automation page for approved SSH actions:
   - service status/start/stop/restart/enable/disable
-  - Linux user password change
-  - custom command only when `ALLOW_CUSTOM_COMMANDS=true`
+  - approved package/kernel remediation actions
+  - unrestricted custom command only when `ALLOW_CUSTOM_COMMANDS=true`
+- OpsForge does not collect or pipe sudo passwords. Privileged actions require root or passwordless sudo on the target server.
 - Automation runs are audited in `action_runs`.
 - Linux Docker installer supports Ubuntu/Debian and AlmaLinux/RHEL-family systems.
 

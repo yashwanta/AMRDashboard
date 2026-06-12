@@ -149,9 +149,11 @@ Important settings:
 | `SESSION_SECRET` | generated | Key used to sign web login tokens |
 | `ADMIN_USERNAME` | `admin` | Web login username |
 | `ADMIN_PASSWORD` | generated | Web login password |
-| `ALLOW_CUSTOM_COMMANDS` | `false` | Enables custom Automation commands |
+| `ALLOW_CUSTOM_COMMANDS` | `false` | Enables unrestricted Automation commands; approved actions do not need this |
 | `SCHEDULE_AM` | `0 6 * * *` | Morning sync cron |
 | `SCHEDULE_PM` | `0 18 * * *` | Evening sync cron |
+
+OpsForge does not accept sudo passwords in the web UI or generated commands. Privileged actions require the target SSH account to be `root` or to have passwordless sudo configured outside RoboWatch. Package remediation scripts check for root privileges before running `apt-get`, `dnf`, or `yum`.
 
 ## Troubleshooting
 

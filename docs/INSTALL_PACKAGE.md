@@ -132,3 +132,4 @@ powershell -ExecutionPolicy Bypass -File .\robowatch-windows-control.ps1 restart
 - The database is stored in a Docker volume, so app restarts do not delete data.
 - Keep `.env` and `/opt/robowatch/robowatch.env` private because they contain secrets.
 - Custom OpsForge commands remain disabled unless explicitly enabled.
+- OpsForge never collects or pipes sudo passwords. Privileged approved actions require the target SSH account to be `root` or have passwordless sudo configured outside RoboWatch.

@@ -1,167 +1,92 @@
 package handlers
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestBuildPackageInstallUsesSudoPasswordButAuditMasksIt(t *testing.T) {
+func TestBuildPackageInstallRequiresRootWithoutPasswordHandling(t *testing.T) {
 	handler := NewActionHandler(nil, "", false)
 	req := actionRunRequest{
-		Action:       "package_install",
-		PackageName:  "curl",
-		SudoPassword: "Secret123!",
+		Action:      "package_install",
+		PackageName: "curl",
 	}
 
 	command, err := handler.buildCommand(req)
 	if err != nil {
 		t.Fatalf("buildCommand returned error: %v", err)
 	}
-	if !strings.Contains(command, "apt-get install -y 'curl'") {
-		t.Fatalf("expected apt install command, got %q", command)
-	}
-	if !strings.Contains(command, "Secret123!") {
-		t.Fatalf("runtime command should include sudo password pipe, got %q", command)
-	}
-
-	audit := auditCommand(command, req)
-	if strings.Contains(audit, "Secret123!") {
-		t.Fatalf("audit command leaked sudo password: %q", audit)
-	}
-	if !strings.Contains(audit, "'******'") {
-		t.Fatalf("expected masked sudo password in audit command, got %q", audit)
-	}
+	requireContains(t, command, "Run this script with sudo or as root")
+	requireContains(t, command, "apt-get install -y")
+	requireContains(t, command, "curl")
+	requireContains(t, command, "sudo -n sh -c")
+	requireNotContains(t, command, "sudo"+" -S")
+	requireNotContains(t, command, "printf '"+"%s\\n"+"'")
 }
 
-func TestBuildCVERemediationUsesLinuxSigned(t *testing.T) {
+func TestBuildCVERemediationDetectsKernelPackages(t *testing.T) {
 	handler := NewActionHandler(nil, "", false)
-	req := actionRunRequest{
-		Action:       "remediate_cve_2026_31431_linux_signed",
-		SudoPassword: "Secret123!",
-	}
+	req := actionRunRequest{Action: "remediate_cve_2026_43494_linux_signed_upgrade"}
 
 	command, err := handler.buildCommand(req)
 	if err != nil {
 		t.Fatalf("buildCommand returned error: %v", err)
 	}
-	if !strings.Contains(command, "apt-get update") {
-		t.Fatalf("expected apt-get update command, got %q", command)
-	}
-	if !strings.Contains(command, "apt-get install -y linux-signed") {
-		t.Fatalf("expected linux-signed install command, got %q", command)
-	}
-	if strings.Contains(auditCommand(command, req), "Secret123!") {
-		t.Fatalf("audit command leaked sudo password")
-	}
+	requireContains(t, command, "apt-get update")
+	requireContains(t, command, "dpkg-query")
+	requireContains(t, command, "linux-generic-hwe-24.04")
+	requireContains(t, command, "linux-image-[0-9]*")
+	requireContains(t, command, "apt-get install -y --only-upgrade $packages")
+	requireContains(t, command, "/var/run/reboot-required")
+	requireContains(t, command, "uname -r")
+	requireContains(t, command, "APT/dpkg lock is active")
+	requireNotContains(t, command, "linux"+"-signed")
+	requireNotContains(t, command, "sudo"+" -S")
 }
 
-func TestBuildCVE43494RemediationOnlyUpgradesLinuxSigned(t *testing.T) {
+func TestBuildCVE43494GenericKernelUsesSameDetectedPackageRemediation(t *testing.T) {
 	handler := NewActionHandler(nil, "", false)
-	req := actionRunRequest{
-		Action:       "remediate_cve_2026_43494_linux_signed_upgrade",
-		SudoPassword: "Secret123!",
-	}
+	req := actionRunRequest{Action: "remediate_cve_2026_43494_ubuntu_generic_kernel"}
 
 	command, err := handler.buildCommand(req)
 	if err != nil {
 		t.Fatalf("buildCommand returned error: %v", err)
 	}
-	if !strings.Contains(command, "apt-get update") {
-		t.Fatalf("expected apt-get update command, got %q", command)
-	}
-	if !strings.Contains(command, "apt-get install -y --only-upgrade linux-signed") {
-		t.Fatalf("expected linux-signed only-upgrade command, got %q", command)
-	}
-	if strings.Contains(auditCommand(command, req), "Secret123!") {
-		t.Fatalf("audit command leaked sudo password")
-	}
+	requireContains(t, command, "No supported installed Ubuntu kernel meta/image package found to upgrade.")
+	requireContains(t, command, "Installed kernel packages after remediation:")
+	requireNotContains(t, command, "linux"+"-signed")
 }
 
-func TestBuildCVE43494GenericKernelRemediation(t *testing.T) {
+func TestBuildSystemRebootRequiresRootWithoutPasswordHandling(t *testing.T) {
 	handler := NewActionHandler(nil, "", false)
-	req := actionRunRequest{
-		Action:       "remediate_cve_2026_43494_ubuntu_generic_kernel",
-		SudoPassword: "Secret123!",
-	}
+	req := actionRunRequest{Action: "system_reboot"}
 
 	command, err := handler.buildCommand(req)
 	if err != nil {
 		t.Fatalf("buildCommand returned error: %v", err)
 	}
-	if !strings.Contains(command, "apt-get update") {
-		t.Fatalf("expected apt-get update command, got %q", command)
-	}
-	if !strings.Contains(command, "apt-get install -y --only-upgrade linux-generic linux-image-generic linux-headers-generic") {
-		t.Fatalf("expected generic kernel only-upgrade command, got %q", command)
-	}
-	if strings.Contains(auditCommand(command, req), "Secret123!") {
-		t.Fatalf("audit command leaked sudo password")
-	}
+	requireContains(t, command, "Run this script with sudo or as root")
+	requireContains(t, command, "nohup systemctl reboot")
+	requireNotContains(t, command, "sudo"+" -S")
 }
 
-func TestBuildSystemRebootUsesBackgroundSystemctl(t *testing.T) {
+func TestApprovedCustomCommandAllowsRootRequiredPackageTemplate(t *testing.T) {
 	handler := NewActionHandler(nil, "", false)
 	req := actionRunRequest{
-		Action:       "system_reboot",
-		SudoPassword: "Secret123!",
+		Action:  "approved_custom_command",
+		Command: "apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade linux-generic linux-image-generic linux-headers-generic",
 	}
 
 	command, err := handler.buildCommand(req)
 	if err != nil {
 		t.Fatalf("buildCommand returned error: %v", err)
 	}
-	if !strings.Contains(command, "nohup systemctl reboot") {
-		t.Fatalf("expected background reboot command, got %q", command)
-	}
-	if strings.Contains(auditCommand(command, req), "Secret123!") {
-		t.Fatalf("audit command leaked sudo password")
-	}
-}
-
-func TestApprovedCustomCommandAllowsCVERemediationTemplate(t *testing.T) {
-	handler := NewActionHandler(nil, "", false)
-	req := actionRunRequest{
-		Action:       "approved_custom_command",
-		Command:      "sudo apt-get update && sudo apt-get install -y linux-signed",
-		SudoPassword: "Secret123!",
-	}
-
-	command, err := handler.buildCommand(req)
-	if err != nil {
-		t.Fatalf("buildCommand returned error: %v", err)
-	}
-	if !strings.Contains(command, "apt-get update") || !strings.Contains(command, "apt-get install -y linux-signed") {
-		t.Fatalf("expected approved CVE remediation command, got %q", command)
-	}
-	if !strings.Contains(command, "sudo -S") {
-		t.Fatalf("expected sudo password path, got %q", command)
-	}
-	if strings.Contains(auditCommand(command, req), "Secret123!") {
-		t.Fatalf("audit command leaked sudo password")
-	}
-}
-
-func TestApprovedCustomCommandAllowsCVE43494GenericKernelTemplate(t *testing.T) {
-	handler := NewActionHandler(nil, "", false)
-	req := actionRunRequest{
-		Action:       "approved_custom_command",
-		Command:      "sudo apt-get update && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade linux-generic linux-image-generic linux-headers-generic",
-		SudoPassword: "Secret123!",
-	}
-
-	command, err := handler.buildCommand(req)
-	if err != nil {
-		t.Fatalf("buildCommand returned error: %v", err)
-	}
-	if !strings.Contains(command, "apt-get update") || !strings.Contains(command, "linux-generic linux-image-generic linux-headers-generic") {
-		t.Fatalf("expected approved generic kernel remediation command, got %q", command)
-	}
-	if !strings.Contains(command, "sudo -S") {
-		t.Fatalf("expected sudo password path, got %q", command)
-	}
-	if strings.Contains(auditCommand(command, req), "Secret123!") {
-		t.Fatalf("audit command leaked sudo password")
-	}
+	requireContains(t, command, "Run this script with sudo or as root")
+	requireContains(t, command, "apt-get update")
+	requireContains(t, command, "linux-generic linux-image-generic linux-headers-generic")
+	requireNotContains(t, command, "sudo"+" -S")
 }
 
 func TestApprovedCustomCommandRejectsShellMetacharacters(t *testing.T) {
@@ -173,5 +98,50 @@ func TestApprovedCustomCommandRejectsShellMetacharacters(t *testing.T) {
 
 	if _, err := handler.buildCommand(req); err == nil {
 		t.Fatalf("expected shell metacharacter command to be rejected")
+	}
+}
+
+func TestRepositoryDoesNotContainSudoCredentialPiping(t *testing.T) {
+	root := filepath.Clean("../../..")
+	forbidden := []string{"sudo" + " -S", "printf '" + "%s\\n" + "'"}
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", "node_modules", "dist", ".gocache":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		text := string(data)
+		for _, pattern := range forbidden {
+			if strings.Contains(text, pattern) {
+				t.Fatalf("forbidden sudo password pattern %q found in %s", pattern, path)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan repository: %v", err)
+	}
+}
+
+func requireContains(t *testing.T, value, needle string) {
+	t.Helper()
+	if !strings.Contains(value, needle) {
+		t.Fatalf("expected %q to contain %q", value, needle)
+	}
+}
+
+func requireNotContains(t *testing.T, value, needle string) {
+	t.Helper()
+	if strings.Contains(value, needle) {
+		t.Fatalf("expected %q not to contain %q", value, needle)
 	}
 }
