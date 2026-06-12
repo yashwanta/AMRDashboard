@@ -1,6 +1,8 @@
 # ── Data ──────────────────────────────────────────────────────────────────────
 data/archives/
 data/logs/
+packages/
+*.zip
 *.tgz
 *.tar.gz
 

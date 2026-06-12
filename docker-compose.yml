@@ -5,13 +5,13 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: amr
-      POSTGRES_PASSWORD: amr
-      POSTGRES_DB: amrdashboard
+      POSTGRES_USER: ${POSTGRES_USER:-amr}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-amr}
+      POSTGRES_DB: ${POSTGRES_DB:-amrdashboard}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U amr -d amrdashboard"]
       interval: 5s
@@ -19,6 +19,7 @@ services:
       retries: 10
 
   backend:
+    image: ${BACKEND_IMAGE:-robowatch-backend:latest}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -27,7 +28,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://amr:amr@postgres:5432/amrdashboard?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-amr}:${POSTGRES_PASSWORD:-amr}@postgres:5432/${POSTGRES_DB:-amrdashboard}?sslmode=disable
       SERVER_PORT: 8080
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-change-this-32-byte-secret-key!!}
       SESSION_SECRET: ${SESSION_SECRET:-change-this-session-secret!!}
@@ -37,9 +38,10 @@ services:
       SCHEDULE_AM: "0 6 * * *"
       SCHEDULE_PM: "0 18 * * *"
     ports:
-      - "8080:8080"
+      - "${API_PORT:-8080}:8080"
 
   frontend:
+    image: ${FRONTEND_IMAGE:-robowatch-frontend:latest}
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -47,7 +49,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "3000:80"
+      - "${APP_PORT:-3000}:80"
 
 volumes:
   pgdata:

@@ -63,6 +63,7 @@ sudo systemctl status robowatch
 ```
 
 Step-by-step install guide: [INSTALL.md](INSTALL.md)  
+Copyable Ubuntu/AlmaLinux/Windows install package: [docs/INSTALL_PACKAGE.md](docs/INSTALL_PACKAGE.md)  
 More deployment details: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 
 ---

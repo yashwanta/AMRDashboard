@@ -8,6 +8,8 @@ This guide installs RoboWatch as a containerized app with:
 
 The easiest production install is the Linux Docker installer. It supports Ubuntu/Debian and AlmaLinux/RHEL-family servers.
 
+For a copyable installer archive for Ubuntu, AlmaLinux, and Windows, see [docs/INSTALL_PACKAGE.md](docs/INSTALL_PACKAGE.md).
+
 ## Linux Quick Install
 
 On the Ubuntu or AlmaLinux server:

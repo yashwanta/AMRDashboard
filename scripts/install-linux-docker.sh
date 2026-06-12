@@ -200,9 +200,15 @@ chmod 750 "${INSTALL_DIR}"
 } >"${ENV_FILE}"
 chmod 600 "${ENV_FILE}"
 
-echo "Building RoboWatch images with Docker..."
-docker build -t "${BACKEND_IMAGE}" -f "${SOURCE_DIR}/backend/Dockerfile" "${SOURCE_DIR}/backend"
-docker build -t "${FRONTEND_IMAGE}" -f "${SOURCE_DIR}/frontend/Dockerfile" "${SOURCE_DIR}/frontend"
+IMAGE_BUNDLE="${SOURCE_DIR}/images/robowatch-images.tar"
+if [[ -f "${IMAGE_BUNDLE}" ]]; then
+  echo "Loading RoboWatch container images from ${IMAGE_BUNDLE}..."
+  docker load -i "${IMAGE_BUNDLE}"
+else
+  echo "Building RoboWatch images with Docker..."
+  docker build -t "${BACKEND_IMAGE}" -f "${SOURCE_DIR}/backend/Dockerfile" "${SOURCE_DIR}/backend"
+  docker build -t "${FRONTEND_IMAGE}" -f "${SOURCE_DIR}/frontend/Dockerfile" "${SOURCE_DIR}/frontend"
+fi
 
 cat >"${CONTROL_SCRIPT}" <<'EOF'
 #!/usr/bin/env bash
