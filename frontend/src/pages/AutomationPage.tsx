@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
-import { Play, Terminal, Wrench, KeyRound } from 'lucide-react'
+import { CheckCircle, Copy, KeyRound, Play, ShieldCheck, Terminal, Wrench } from 'lucide-react'
 import { getActionHistory, getServers, runAction } from '../api/client'
 import type { ActionRunRequest, AutomationAction } from '../types'
 
@@ -73,11 +73,53 @@ export default function AutomationPage() {
   const [activeRunId, setActiveRunId] = useState<number | null>(null)
   const [runStartedAt, setRunStartedAt] = useState<Date | null>(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const [setupPublicKey, setSetupPublicKey] = useState('')
+  const [setupCopied, setSetupCopied] = useState<string | null>(null)
 
   const selectedServer = useMemo(
     () => servers.find(s => s.id === serverId),
     [servers, serverId]
   )
+
+  const setupUser = selectedServer?.username?.trim() || 'robowatch'
+  const setupHost = selectedServer?.host || 'target-server'
+  const setupPort = selectedServer?.port || 22
+
+  const bootstrapScript = useMemo(() => {
+    const keyLine = setupPublicKey.trim() || 'PASTE_PUBLIC_KEY_HERE'
+    return [
+      '# Run this manually on the target server as an admin user.',
+      '# It creates or updates the automation account for OpsForge.',
+      'set -e',
+      `OPSFORGE_USER='${setupUser.replace(/'/g, "'\\''")}'`,
+      `OPSFORGE_KEY='${keyLine.replace(/'/g, "'\\''")}'`,
+      '',
+      'if [ "$(id -u)" -ne 0 ]; then',
+      '  echo "Run this bootstrap with sudo or as root."',
+      '  exit 1',
+      'fi',
+      '',
+      'if ! id "$OPSFORGE_USER" >/dev/null 2>&1; then',
+      '  useradd -m -s /bin/bash "$OPSFORGE_USER"',
+      'fi',
+      '',
+      'install -d -m 700 -o "$OPSFORGE_USER" -g "$OPSFORGE_USER" "/home/$OPSFORGE_USER/.ssh"',
+      'cat > "/home/$OPSFORGE_USER/.ssh/authorized_keys" <<OPSFORGE_AUTH_KEY',
+      '$OPSFORGE_KEY',
+      'OPSFORGE_AUTH_KEY',
+      'chown "$OPSFORGE_USER:$OPSFORGE_USER" "/home/$OPSFORGE_USER/.ssh/authorized_keys"',
+      'chmod 600 "/home/$OPSFORGE_USER/.ssh/authorized_keys"',
+      '',
+      'cat > "/etc/sudoers.d/opsforge-$OPSFORGE_USER" <<EOF',
+      '$OPSFORGE_USER ALL=(root) NOPASSWD: /bin/sh, /usr/bin/sh',
+      'EOF',
+      'chmod 440 "/etc/sudoers.d/opsforge-$OPSFORGE_USER"',
+      'visudo -cf "/etc/sudoers.d/opsforge-$OPSFORGE_USER"',
+      '',
+      'echo "OpsForge bootstrap complete."',
+      'echo "Next: update the server record to use this username and private key, then run Check privilege access."',
+    ].join('\n')
+  }, [setupPublicKey, setupUser])
 
   const mutation = useMutation({
     mutationFn: (payload: ActionRunRequest) => runAction(payload),
@@ -157,6 +199,18 @@ export default function AutomationPage() {
 
   function submit() {
     mutation.mutate(buildPayload())
+  }
+
+  async function copyText(label: string, text: string) {
+    await navigator.clipboard.writeText(text)
+    setSetupCopied(label)
+    window.setTimeout(() => setSetupCopied(null), 1800)
+  }
+
+  function runPrivilegeCheck() {
+    if (!serverId) return
+    setAction('privilege_check')
+    mutation.mutate({ server_id: serverId, action: 'privilege_check' })
   }
 
   const actionNeedsService = serviceActions.includes(action)
@@ -304,6 +358,80 @@ export default function AutomationPage() {
         </section>
 
         <section className="space-y-5">
+          <div className="bg-gray-800 border border-gray-700 rounded-lg overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-700 flex items-center gap-2">
+              <ShieldCheck size={16} className="text-cyan-300" />
+              <h2 className="font-semibold text-white text-sm">OpsForge Setup Wizard</h2>
+            </div>
+            <div className="p-4 grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4">
+              <div className="space-y-3 text-sm">
+                <div className="rounded-md border border-gray-700 bg-gray-950 p-3">
+                  <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">Selected target</p>
+                  <p className="font-mono text-gray-200">{setupUser}@{setupHost}:{setupPort}</p>
+                  <p className="text-xs text-gray-500 mt-2">Use a dedicated user like robowatch when possible. Root SSH also works if your policy allows it.</p>
+                </div>
+                <div className="space-y-2">
+                  {[
+                    'Generate an SSH key on the machine running this app.',
+                    'Paste the public key below.',
+                    'Run the generated bootstrap script on the target as root or with sudo.',
+                    'Edit the server record to use Private Key auth.',
+                    'Run Check privilege access before patching.',
+                  ].map((step, idx) => (
+                    <div key={step} className="flex gap-2 text-xs text-gray-300">
+                      <span className="w-5 h-5 rounded-full bg-cyan-950 text-cyan-200 border border-cyan-800 flex items-center justify-center flex-shrink-0">{idx + 1}</span>
+                      <span>{step}</span>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={runPrivilegeCheck}
+                  disabled={!serverId || mutation.isPending}
+                  className="btn-primary flex items-center gap-2 text-sm"
+                >
+                  <CheckCircle size={15} />
+                  Check privilege access
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-1.5">Public key for authorized_keys</label>
+                  <textarea
+                    className="input bg-gray-950 border-gray-700 text-white min-h-20 font-mono text-xs"
+                    value={setupPublicKey}
+                    onChange={e => setSetupPublicKey(e.target.value)}
+                    placeholder="ssh-ed25519 AAAA... ansible patching key"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => copyText('keygen', 'ssh-keygen -t ed25519 -f ~/.ssh/ansible_patch_key -C "ansible patching key"')}
+                    className="text-xs px-3 py-1.5 rounded-md border border-gray-700 bg-gray-950 hover:bg-gray-700 text-gray-300 flex items-center gap-1.5"
+                  >
+                    <Copy size={13} />
+                    Copy keygen command
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => copyText('script', bootstrapScript)}
+                    className="text-xs px-3 py-1.5 rounded-md border border-gray-700 bg-gray-950 hover:bg-gray-700 text-gray-300 flex items-center gap-1.5"
+                  >
+                    <Copy size={13} />
+                    Copy bootstrap script
+                  </button>
+                  {setupCopied && <span className="text-xs text-green-300 self-center">Copied {setupCopied}</span>}
+                </div>
+                <pre className="max-h-72 overflow-auto p-3 text-xs text-gray-200 bg-gray-950 border border-gray-700 rounded-md whitespace-pre-wrap">{bootstrapScript}</pre>
+                <p className="text-xs text-amber-200 bg-amber-950/40 border border-amber-800 rounded-md p-3">
+                  This app still does not collect sudo passwords. The bootstrap is a one-time target-side admin step that enables approved OpsForge scripts to run without password prompts.
+                </p>
+              </div>
+            </div>
+          </div>
+
           <div className="bg-gray-800 border border-gray-700 rounded-lg overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-700 flex items-center gap-2">
               <Terminal size={16} className="text-green-300" />
