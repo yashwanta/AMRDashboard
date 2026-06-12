@@ -98,8 +98,32 @@ export default function AutomationPage() {
     [history, activeRunId]
   )
 
+  function privilegeHelp(username = 'automation-user') {
+    return [
+      'Secure privilege setup required:',
+      `- The SSH user "${username}" is not root and does not have passwordless sudo for this action.`,
+      '- This app will not collect, store, transmit, or pipe sudo passwords.',
+      '- Safe options: connect with a root SSH account, or configure passwordless sudo on the target for a dedicated automation user.',
+      '- After changing the target, run "Check privilege access" before patch, remediation, or reboot actions.',
+      '',
+      'Example target-side setup, run manually as root:',
+      `visudo -f /etc/sudoers.d/robowatch-${username}`,
+      `${username} ALL=(root) NOPASSWD: /bin/sh, /usr/bin/sh`,
+      '',
+      'Note: allowing /bin/sh lets the approved RoboWatch scripts run as root. Use a dedicated SSH account and restrict SSH access to this app host.',
+    ].join('\n')
+  }
+
+  function outputNeedsPrivilegeHelp(text: string) {
+    return /sudo:.*password is required|a password is required|passwordless sudo/i.test(text)
+  }
+
   function runOutput(run: typeof history[number]) {
-    return [run.output, run.error].filter(Boolean).join('\n') || `${actionLabels[run.action] || run.action} completed successfully, but the target did not return output.`
+    const text = [run.output, run.error].filter(Boolean).join('\n')
+    if (!text) return `${actionLabels[run.action] || run.action} completed successfully, but the target did not return output.`
+    if (!outputNeedsPrivilegeHelp(text)) return text
+    const runServer = servers.find(server => server.id === run.server_id)
+    return `${text}\n\n${privilegeHelp(runServer?.username || selectedServer?.username)}`
   }
 
   function showRun(run: typeof history[number]) {
@@ -270,7 +294,9 @@ export default function AutomationPage() {
               <div className="text-xs text-gray-400 border border-gray-700 rounded-md p-3">
                 Target: <span className="text-gray-200">{selectedServer.username}@{selectedServer.host}:{selectedServer.port}</span>
                 {actionNeedsSudo && (
-                  <div className="mt-2 text-amber-200">Privileged actions require root or passwordless sudo on the target. This app does not collect sudo passwords. Use Check privilege access first.</div>
+                  <div className="mt-2 text-amber-200">
+                    Privileged actions require root SSH or passwordless sudo on the target. This app does not collect sudo passwords. Use Check privilege access first.
+                  </div>
                 )}
               </div>
             )}
