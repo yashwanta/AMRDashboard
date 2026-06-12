@@ -68,8 +68,39 @@ func TestBuildSystemRebootRequiresRootWithoutPasswordHandling(t *testing.T) {
 		t.Fatalf("buildCommand returned error: %v", err)
 	}
 	requireContains(t, command, "Run this script with sudo or as root")
+	requireContains(t, command, "Reboot command accepted. The SSH session may disconnect.")
 	requireContains(t, command, "nohup systemctl reboot")
 	requireNotContains(t, command, "sudo"+" -S")
+}
+
+func TestBuildListUpgradesReturnsClearOutputWhenEmpty(t *testing.T) {
+	handler := NewActionHandler(nil, "", false)
+	req := actionRunRequest{Action: "package_list_upgrades"}
+
+	command, err := handler.buildCommand(req)
+	if err != nil {
+		t.Fatalf("buildCommand returned error: %v", err)
+	}
+	requireContains(t, command, "Package manager: apt-get")
+	requireContains(t, command, "No apt upgrades are currently available.")
+	requireContains(t, command, "No dnf upgrades are currently available.")
+	requireContains(t, command, "No yum upgrades are currently available.")
+	requireNotContains(t, command, "sudo"+" -S")
+}
+
+func TestBuildPackageUpgradePrintsStatusAndRebootRequirement(t *testing.T) {
+	handler := NewActionHandler(nil, "", false)
+	req := actionRunRequest{Action: "package_upgrade"}
+
+	command, err := handler.buildCommand(req)
+	if err != nil {
+		t.Fatalf("buildCommand returned error: %v", err)
+	}
+	requireContains(t, command, "Running apt system upgrade...")
+	requireContains(t, command, "apt system upgrade completed.")
+	requireContains(t, command, "Reboot required:")
+	requireContains(t, command, "Running dnf system upgrade...")
+	requireContains(t, command, "Running yum system update...")
 }
 
 func TestApprovedCustomCommandAllowsRootRequiredPackageTemplate(t *testing.T) {

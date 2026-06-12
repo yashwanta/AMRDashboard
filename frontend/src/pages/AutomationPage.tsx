@@ -12,17 +12,16 @@ const actionLabels: Record<AutomationAction, string> = {
   service_stop: 'Stop service',
   service_enable: 'Enable service',
   service_disable: 'Disable service',
-  package_update_cache: 'sudo apt/dnf update',
+  package_update_cache: 'Update package cache (Ubuntu/AlmaLinux)',
   package_list_upgrades: 'List available upgrades',
   package_upgrade_dry_run: 'Preview upgrade',
-  package_upgrade: 'sudo apt/dnf upgrade',
-  package_install: 'sudo apt/dnf install package',
+  package_upgrade: 'Run system upgrade (Ubuntu/AlmaLinux)',
+  package_install: 'Install package (Ubuntu/AlmaLinux)',
   remediate_cve_2026_31431_linux_signed: 'Remediate CVE-2026-31431 kernel packages',
   remediate_cve_2026_43494_linux_signed_upgrade: 'Remediate CVE-2026-43494 kernel packages',
   remediate_cve_2026_43494_ubuntu_generic_kernel: 'Remediate CVE-2026-43494 Ubuntu generic kernel',
   system_reboot: 'Restart server/workstation',
   approved_custom_command: 'Approved custom command',
-  custom_command: 'Unrestricted custom command',
 }
 
 const serviceActions: AutomationAction[] = [
@@ -98,9 +97,20 @@ export default function AutomationPage() {
     [history, activeRunId]
   )
 
+  function runOutput(run: typeof history[number]) {
+    return [run.output, run.error].filter(Boolean).join('\n') || `${actionLabels[run.action] || run.action} completed successfully, but the target did not return output.`
+  }
+
+  function showRun(run: typeof history[number]) {
+    setActiveRunId(run.id)
+    setRunStartedAt(new Date(run.created_at))
+    setElapsedSeconds(Math.max(0, Math.floor((Date.now() - new Date(run.created_at).getTime()) / 1000)))
+    setLastOutput(run.status === 'running' ? run.output || 'Queued. Connecting over SSH...' : runOutput(run))
+  }
+
   useEffect(() => {
     if (!activeRun || activeRun.status === 'running') return
-    setLastOutput([activeRun.output, activeRun.error].filter(Boolean).join('\n') || `${actionLabels[activeRun.action] || activeRun.action} finished with status: ${activeRun.status}`)
+    setLastOutput(runOutput(activeRun))
   }, [activeRun])
 
   useEffect(() => {
@@ -116,7 +126,7 @@ export default function AutomationPage() {
     const payload: ActionRunRequest = { server_id: serverId, action }
     if (serviceActions.includes(action)) payload.service_name = serviceName
     if (action === 'package_install') payload.package_name = packageName
-    if (action === 'custom_command' || action === 'approved_custom_command') payload.command = command
+    if (action === 'approved_custom_command') payload.command = command
     return payload
   }
 
@@ -131,7 +141,7 @@ export default function AutomationPage() {
     serverId > 0 &&
     (!actionNeedsService || serviceName.trim() !== '') &&
     (!actionNeedsPackage || packageName.trim() !== '') &&
-    ((action !== 'custom_command' && action !== 'approved_custom_command') || command.trim() !== '')
+    (action !== 'approved_custom_command' || command.trim() !== '')
   const canRun = formReady && !mutation.isPending
 
   return (
@@ -185,13 +195,6 @@ export default function AutomationPage() {
               </div>
             )}
 
-            {action === 'custom_command' && (
-              <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1.5">Command</label>
-                <textarea className="input bg-gray-950 border-gray-700 text-white min-h-24 font-mono" value={command} onChange={e => setCommand(e.target.value)} placeholder="Use Approved custom command for safe commands like uname -r" />
-              </div>
-            )}
-
             {action === 'approved_custom_command' && (
               <div className="space-y-3">
                 <div>
@@ -216,14 +219,14 @@ export default function AutomationPage() {
                   ))}
                 </div>
                 <div className="text-xs text-gray-400 bg-gray-950 border border-gray-700 rounded-md p-3">
-                  Approved custom commands allow package, systemctl, journal, disk, memory, uptime, and uname commands. Privileged commands require the SSH account to be root or have passwordless sudo configured outside this app. Full unrestricted custom commands still require <span className="font-mono text-gray-200">ALLOW_CUSTOM_COMMANDS=true</span>.
+                  Approved custom commands allow package, systemctl, journal, disk, memory, uptime, and uname commands. Privileged commands require the SSH account to be root or have passwordless sudo configured outside this app.
                 </div>
               </div>
             )}
 
             {(action === 'package_update_cache' || action === 'package_upgrade' || action === 'package_install') && (
               <div className="text-xs text-amber-100 bg-amber-950/50 border border-amber-800 rounded-md p-3">
-                This runs package manager commands with sudo on the selected server. Ubuntu/Debian uses apt-get; AlmaLinux/RHEL uses dnf or yum.
+                This runs package manager commands on the selected server. Ubuntu/Debian uses apt-get; AlmaLinux/RHEL uses dnf or yum. Privileged actions require root or passwordless sudo.
               </div>
             )}
 
@@ -248,12 +251,6 @@ export default function AutomationPage() {
             {action === 'system_reboot' && (
               <div className="text-xs text-red-100 bg-red-950/40 border border-red-800 rounded-md p-3">
                 This restarts the selected server or workstation. The SSH session may disconnect while the machine reboots.
-              </div>
-            )}
-
-            {action === 'custom_command' && (
-              <div className="text-xs text-gray-400 bg-gray-950 border border-gray-700 rounded-md p-3">
-                Unrestricted custom commands are disabled unless backend environment variable <span className="font-mono text-gray-200">ALLOW_CUSTOM_COMMANDS=true</span>. Use <span className="font-mono text-gray-200">Approved custom command</span> for safe commands such as <span className="font-mono text-gray-200">uname -r</span>, package updates, systemctl, disk, and memory checks.
               </div>
             )}
 
@@ -310,7 +307,7 @@ export default function AutomationPage() {
                   <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-500">No actions have been run yet.</td></tr>
                 )}
                 {history.map(run => (
-                  <tr key={run.id} className="hover:bg-gray-700/30">
+                  <tr key={run.id} onClick={() => showRun(run)} className="hover:bg-gray-700/30 cursor-pointer">
                     <td className="px-4 py-3 text-gray-400 whitespace-nowrap">{format(parseISO(run.created_at), 'MMM d, h:mm a')}</td>
                     <td className="px-4 py-3 text-gray-200">{actionLabels[run.action] || run.action}</td>
                     <td className="px-4 py-3">

@@ -105,6 +105,9 @@ func (h *ActionHandler) executeRun(ctx context.Context, runID int64, server mode
 		status = "failed"
 		errText = runErr.Error()
 	}
+	if status == "success" && strings.TrimSpace(output) == "" {
+		output = "Command completed successfully, but the target did not return any output."
+	}
 
 	_ = h.updateRun(ctx, runID, status, output, errText)
 }
@@ -149,19 +152,23 @@ func (h *ActionHandler) buildCommand(req actionRunRequest) (string, error) {
 		return rootRequiredCommand(command), nil
 	case "package_update_cache":
 		return packageManagerCommand(
-			rootRequiredScript(aptLockCheckScript()+"\napt-get update"),
-			rootRequiredCommand("dnf -y makecache"),
-			rootRequiredCommand("yum -y makecache"),
+			rootRequiredScript("echo 'Package manager: apt-get'\n"+aptLockCheckScript()+"\necho 'Updating apt package cache...'\napt-get update\necho 'apt package cache update completed.'"),
+			rootRequiredCommand("echo 'Package manager: dnf'; echo 'Updating dnf package cache...'; dnf -y makecache; echo 'dnf package cache update completed.'"),
+			rootRequiredCommand("echo 'Package manager: yum'; echo 'Updating yum package cache...'; yum -y makecache; echo 'yum package cache update completed.'"),
 		), nil
 	case "package_list_upgrades":
-		return packageManagerCommand("apt list --upgradable 2>/dev/null || true", "dnf check-update || true", "yum check-update || true"), nil
+		return packageManagerCommand(aptListUpgradesCommand(), dnfListUpgradesCommand(), yumListUpgradesCommand()), nil
 	case "package_upgrade_dry_run":
-		return packageManagerCommand("apt-get -s upgrade", "dnf -y --assumeno upgrade", "yum -y --assumeno update"), nil
+		return packageManagerCommand(
+			"echo 'Package manager: apt-get'; echo 'Previewing apt upgrade...'; apt-get -s upgrade",
+			"echo 'Package manager: dnf'; echo 'Previewing dnf upgrade...'; dnf -y --assumeno upgrade",
+			"echo 'Package manager: yum'; echo 'Previewing yum update...'; yum -y --assumeno update",
+		), nil
 	case "package_upgrade":
 		return packageManagerCommand(
-			rootRequiredScript(aptLockCheckScript()+"\nDEBIAN_FRONTEND=noninteractive apt-get -y upgrade"),
-			rootRequiredCommand("dnf -y upgrade"),
-			rootRequiredCommand("yum -y update"),
+			rootRequiredScript("echo 'Package manager: apt-get'\n"+aptLockCheckScript()+"\necho 'Running apt system upgrade...'\nDEBIAN_FRONTEND=noninteractive apt-get -y upgrade\necho 'apt system upgrade completed.'\nif [ -f /var/run/reboot-required ]; then echo 'Reboot required: yes'; else echo 'Reboot required: no'; fi"),
+			rootRequiredCommand("echo 'Package manager: dnf'; echo 'Running dnf system upgrade...'; dnf -y upgrade; echo 'dnf system upgrade completed.'"),
+			rootRequiredCommand("echo 'Package manager: yum'; echo 'Running yum system update...'; yum -y update; echo 'yum system update completed.'"),
 		), nil
 	case "package_install":
 		pkg := strings.TrimSpace(req.PackageName)
@@ -169,9 +176,9 @@ func (h *ActionHandler) buildCommand(req actionRunRequest) (string, error) {
 			return "", fmt.Errorf("valid package name is required")
 		}
 		return packageManagerCommand(
-			rootRequiredScript(aptLockCheckScript()+"\nDEBIAN_FRONTEND=noninteractive apt-get install -y "+shellQuote(pkg)),
-			rootRequiredCommand("dnf install -y "+shellQuote(pkg)),
-			rootRequiredCommand("yum install -y "+shellQuote(pkg)),
+			rootRequiredScript("echo 'Package manager: apt-get'\n"+aptLockCheckScript()+"\necho 'Installing package: "+pkg+"'\nDEBIAN_FRONTEND=noninteractive apt-get install -y "+shellQuote(pkg)+"\necho 'Package install completed: "+pkg+"'"),
+			rootRequiredCommand("echo 'Package manager: dnf'; echo 'Installing package: "+pkg+"'; dnf install -y "+shellQuote(pkg)+"; echo 'Package install completed: "+pkg+"'"),
+			rootRequiredCommand("echo 'Package manager: yum'; echo 'Installing package: "+pkg+"'; yum install -y "+shellQuote(pkg)+"; echo 'Package install completed: "+pkg+"'"),
 		), nil
 	case "remediate_cve_2026_31431_linux_signed":
 		return cve202631431Command(), nil
@@ -180,7 +187,7 @@ func (h *ActionHandler) buildCommand(req actionRunRequest) (string, error) {
 	case "remediate_cve_2026_43494_ubuntu_generic_kernel":
 		return cve202643494GenericKernelCommand(), nil
 	case "system_reboot":
-		return rootRequiredCommand("sh -c 'nohup systemctl reboot >/dev/null 2>&1 &'"), nil
+		return rootRequiredCommand("echo 'Reboot command accepted. The SSH session may disconnect.'; sh -c 'nohup systemctl reboot >/dev/null 2>&1 &'"), nil
 	case "approved_custom_command":
 		command := strings.TrimSpace(req.Command)
 		if command == "" {
@@ -365,6 +372,18 @@ func cve202643494Command() string {
 
 func cve202643494GenericKernelCommand() string {
 	return kernelRemediationCommand("CVE-2026-43494")
+}
+
+func aptListUpgradesCommand() string {
+	return "echo 'Package manager: apt-get'; updates=$(apt list --upgradable 2>/dev/null | sed '/^Listing/d' || true); if [ -n \"$updates\" ]; then echo \"$updates\"; else echo 'No apt upgrades are currently available.'; fi"
+}
+
+func dnfListUpgradesCommand() string {
+	return "echo 'Package manager: dnf'; output=$(dnf check-update 2>&1); code=$?; if [ $code -eq 100 ]; then echo \"$output\"; elif [ $code -eq 0 ]; then echo 'No dnf upgrades are currently available.'; else echo \"$output\"; exit $code; fi"
+}
+
+func yumListUpgradesCommand() string {
+	return "echo 'Package manager: yum'; output=$(yum check-update 2>&1); code=$?; if [ $code -eq 100 ]; then echo \"$output\"; elif [ $code -eq 0 ]; then echo 'No yum upgrades are currently available.'; else echo \"$output\"; exit $code; fi"
 }
 
 func approvedCustomCommand(command string) (string, error) {

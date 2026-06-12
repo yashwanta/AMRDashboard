@@ -210,7 +210,6 @@ export type AutomationAction =
   | 'remediate_cve_2026_43494_ubuntu_generic_kernel'
   | 'system_reboot'
   | 'approved_custom_command'
-  | 'custom_command'
 
 export interface ActionRunRequest {
   server_id: number
