@@ -26,6 +26,21 @@ func TestBuildPackageInstallRequiresRootWithoutPasswordHandling(t *testing.T) {
 	requireNotContains(t, command, "printf '"+"%s\\n"+"'")
 }
 
+func TestBuildPrivilegeCheckExplainsPatchReadiness(t *testing.T) {
+	handler := NewActionHandler(nil, "", false)
+	req := actionRunRequest{Action: "privilege_check"}
+
+	command, err := handler.buildCommand(req)
+	if err != nil {
+		t.Fatalf("buildCommand returned error: %v", err)
+	}
+	requireContains(t, command, "Privilege check: PASS")
+	requireContains(t, command, "passwordless sudo")
+	requireContains(t, command, "Patch, install, upgrade, remediation, and reboot actions will fail")
+	requireContains(t, command, "sudo -n true")
+	requireNotContains(t, command, "sudo"+" -S")
+}
+
 func TestBuildCVERemediationDetectsKernelPackages(t *testing.T) {
 	handler := NewActionHandler(nil, "", false)
 	req := actionRunRequest{Action: "remediate_cve_2026_43494_linux_signed_upgrade"}

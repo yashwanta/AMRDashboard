@@ -70,10 +70,7 @@ func (c *Client) Run(cmd string) (string, error) {
 
 	out, err := sess.CombinedOutput(cmd)
 	if err != nil {
-		if len(out) > 0 {
-			return string(out), nil
-		}
-		return "", fmt.Errorf("run %q: %w", cmd, err)
+		return string(out), fmt.Errorf("remote command failed: %w", err)
 	}
 	return string(out), nil
 }

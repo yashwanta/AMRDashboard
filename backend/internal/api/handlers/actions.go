@@ -140,6 +140,8 @@ func (h *ActionHandler) buildCommand(req actionRunRequest) (string, error) {
 	action := strings.TrimSpace(req.Action)
 	service := strings.TrimSpace(req.ServiceName)
 	switch action {
+	case "privilege_check":
+		return privilegeCheckCommand(), nil
 	case "service_status", "service_restart", "service_start", "service_stop", "service_enable", "service_disable":
 		if !validUnitName(service) {
 			return "", fmt.Errorf("valid service name is required")
@@ -372,6 +374,10 @@ func cve202643494Command() string {
 
 func cve202643494GenericKernelCommand() string {
 	return kernelRemediationCommand("CVE-2026-43494")
+}
+
+func privilegeCheckCommand() string {
+	return "if [ \"$(id -u)\" -eq 0 ]; then echo 'Privilege check: PASS. SSH user is root; patch and reboot actions can run.'; elif sudo -n true; then echo 'Privilege check: PASS. Passwordless sudo is available; patch and reboot actions can run.'; else echo 'Privilege check: FAIL. SSH user is not root and passwordless sudo is not configured. Patch, install, upgrade, remediation, and reboot actions will fail until you use root or configure NOPASSWD sudo on the target.'; exit 1; fi"
 }
 
 func aptListUpgradesCommand() string {

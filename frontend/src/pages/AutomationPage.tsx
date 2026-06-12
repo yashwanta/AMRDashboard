@@ -6,6 +6,7 @@ import { getActionHistory, getServers, runAction } from '../api/client'
 import type { ActionRunRequest, AutomationAction } from '../types'
 
 const actionLabels: Record<AutomationAction, string> = {
+  privilege_check: 'Check privilege access',
   service_status: 'Check service status',
   service_restart: 'Restart service',
   service_start: 'Start service',
@@ -224,6 +225,12 @@ export default function AutomationPage() {
               </div>
             )}
 
+            {action === 'privilege_check' && (
+              <div className="text-xs text-blue-100 bg-blue-950/40 border border-blue-800 rounded-md p-3">
+                Checks whether the SSH user is root or has passwordless sudo. Run this before patch, install, upgrade, remediation, or reboot actions.
+              </div>
+            )}
+
             {(action === 'package_update_cache' || action === 'package_upgrade' || action === 'package_install') && (
               <div className="text-xs text-amber-100 bg-amber-950/50 border border-amber-800 rounded-md p-3">
                 This runs package manager commands on the selected server. Ubuntu/Debian uses apt-get; AlmaLinux/RHEL uses dnf or yum. Privileged actions require root or passwordless sudo.
@@ -263,7 +270,7 @@ export default function AutomationPage() {
               <div className="text-xs text-gray-400 border border-gray-700 rounded-md p-3">
                 Target: <span className="text-gray-200">{selectedServer.username}@{selectedServer.host}:{selectedServer.port}</span>
                 {actionNeedsSudo && (
-                  <div className="mt-2 text-amber-200">Privileged actions require root or passwordless sudo on the target. This app does not collect sudo passwords.</div>
+                  <div className="mt-2 text-amber-200">Privileged actions require root or passwordless sudo on the target. This app does not collect sudo passwords. Use Check privilege access first.</div>
                 )}
               </div>
             )}

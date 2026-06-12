@@ -194,6 +194,7 @@ export interface AppUserRequest {
 }
 
 export type AutomationAction =
+  | 'privilege_check'
   | 'service_status'
   | 'service_restart'
   | 'service_start'
