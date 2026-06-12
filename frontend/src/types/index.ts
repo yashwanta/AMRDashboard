@@ -207,6 +207,7 @@ export type AutomationAction =
   | 'package_install'
   | 'remediate_cve_2026_31431_linux_signed'
   | 'remediate_cve_2026_43494_linux_signed_upgrade'
+  | 'remediate_cve_2026_43494_ubuntu_generic_kernel'
   | 'system_reboot'
   | 'approved_custom_command'
   | 'change_password'

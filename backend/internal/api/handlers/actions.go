@@ -180,6 +180,8 @@ func (h *ActionHandler) buildCommand(req actionRunRequest) (string, error) {
 		return cve202631431Command(req.SudoPassword), nil
 	case "remediate_cve_2026_43494_linux_signed_upgrade":
 		return cve202643494Command(req.SudoPassword), nil
+	case "remediate_cve_2026_43494_ubuntu_generic_kernel":
+		return cve202643494GenericKernelCommand(req.SudoPassword), nil
 	case "system_reboot":
 		return sudoCommand(req.SudoPassword, "sh -c 'nohup systemctl reboot >/dev/null 2>&1 &'"), nil
 	case "approved_custom_command":
@@ -317,6 +319,14 @@ func cve202643494Command(password string) string {
 	)
 }
 
+func cve202643494GenericKernelCommand(password string) string {
+	return packageManagerCommand(
+		sudoCommand(password, "apt-get update")+" && "+sudoCommand(password, "env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade linux-generic linux-image-generic linux-headers-generic"),
+		"echo 'CVE-2026-43494 generic kernel remediation is currently defined for Ubuntu 24.2/24.04 apt systems.'; exit 2",
+		"echo 'CVE-2026-43494 generic kernel remediation is currently defined for Ubuntu 24.2/24.04 apt systems.'; exit 2",
+	)
+}
+
 func approvedCustomCommand(password, command string) (string, error) {
 	if strings.ContainsAny(command, "|;`$<>") {
 		return "", fmt.Errorf("approved custom commands cannot contain pipes, semicolons, shell expansion, or redirects")
@@ -358,6 +368,8 @@ func approvedCommandPrefix(command string) bool {
 		"apt-get upgrade",
 		"apt-get -y upgrade",
 		"apt list",
+		"DEBIAN_FRONTEND=noninteractive apt-get install",
+		"env DEBIAN_FRONTEND=noninteractive apt-get install",
 		"dnf makecache",
 		"dnf install",
 		"dnf upgrade",
@@ -385,7 +397,7 @@ func approvedCommandPrefix(command string) bool {
 }
 
 func commandNeedsSudo(command string) bool {
-	for _, prefix := range []string{"apt-get", "dnf", "yum", "systemctl restart", "systemctl start", "systemctl stop", "systemctl enable", "systemctl disable"} {
+	for _, prefix := range []string{"apt-get", "DEBIAN_FRONTEND=noninteractive apt-get", "env DEBIAN_FRONTEND=noninteractive apt-get", "dnf", "yum", "systemctl restart", "systemctl start", "systemctl stop", "systemctl enable", "systemctl disable"} {
 		if strings.HasPrefix(command, prefix) {
 			return true
 		}

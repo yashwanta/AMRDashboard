@@ -19,10 +19,11 @@ const actionLabels: Record<AutomationAction, string> = {
   package_install: 'sudo apt/dnf install package',
   remediate_cve_2026_31431_linux_signed: 'Remediate CVE-2026-31431',
   remediate_cve_2026_43494_linux_signed_upgrade: 'Remediate CVE-2026-43494',
+  remediate_cve_2026_43494_ubuntu_generic_kernel: 'Remediate CVE-2026-43494 Ubuntu generic kernel',
   system_reboot: 'Restart server/workstation',
   approved_custom_command: 'Approved custom command',
   change_password: 'Change user password',
-  custom_command: 'Custom command',
+  custom_command: 'Unrestricted custom command',
 }
 
 const serviceActions: AutomationAction[] = [
@@ -45,6 +46,7 @@ const sudoActions: AutomationAction[] = [
   'package_install',
   'remediate_cve_2026_31431_linux_signed',
   'remediate_cve_2026_43494_linux_signed_upgrade',
+  'remediate_cve_2026_43494_ubuntu_generic_kernel',
   'system_reboot',
   'approved_custom_command',
   'change_password',
@@ -53,6 +55,7 @@ const sudoActions: AutomationAction[] = [
 const approvedCommandTemplates = [
   { label: 'CVE-2026-31431 linux-signed', command: 'sudo apt-get update && sudo apt-get install -y linux-signed' },
   { label: 'CVE-2026-43494 linux-signed upgrade', command: 'sudo apt-get update && sudo apt-get install -y --only-upgrade linux-signed' },
+  { label: 'CVE-2026-43494 Ubuntu generic kernel', command: 'sudo apt-get update && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade linux-generic linux-image-generic linux-headers-generic' },
   { label: 'Update apt cache', command: 'sudo apt-get update' },
   { label: 'Install package', command: 'sudo apt-get install -y ' },
   { label: 'Restart service', command: 'sudo systemctl restart ' },
@@ -228,7 +231,7 @@ export default function AutomationPage() {
             {action === 'custom_command' && (
               <div>
                 <label className="block text-xs font-medium text-gray-400 mb-1.5">Command</label>
-                <textarea className="input bg-gray-950 border-gray-700 text-white min-h-24 font-mono" value={command} onChange={e => setCommand(e.target.value)} placeholder="Disabled unless ALLOW_CUSTOM_COMMANDS=true on backend" />
+                <textarea className="input bg-gray-950 border-gray-700 text-white min-h-24 font-mono" value={command} onChange={e => setCommand(e.target.value)} placeholder="Use Approved custom command for safe commands like uname -r" />
               </div>
             )}
 
@@ -279,6 +282,12 @@ export default function AutomationPage() {
               </div>
             )}
 
+            {action === 'remediate_cve_2026_43494_ubuntu_generic_kernel' && (
+              <div className="text-xs text-amber-100 bg-amber-950/50 border border-amber-800 rounded-md p-3">
+                Runs: <span className="font-mono">sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade linux-generic linux-image-generic linux-headers-generic</span>. This remediation is for Ubuntu 24.2/24.04 generic kernel systems.
+              </div>
+            )}
+
             {action === 'system_reboot' && (
               <div className="text-xs text-red-100 bg-red-950/40 border border-red-800 rounded-md p-3">
                 This restarts the selected server or workstation. The SSH session may disconnect while the machine reboots.
@@ -287,7 +296,7 @@ export default function AutomationPage() {
 
             {action === 'custom_command' && (
               <div className="text-xs text-gray-400 bg-gray-950 border border-gray-700 rounded-md p-3">
-                Custom commands require backend environment variable <span className="font-mono text-gray-200">ALLOW_CUSTOM_COMMANDS=true</span>. Approved actions above do not need that flag.
+                Unrestricted custom commands are disabled unless backend environment variable <span className="font-mono text-gray-200">ALLOW_CUSTOM_COMMANDS=true</span>. Use <span className="font-mono text-gray-200">Approved custom command</span> for safe commands such as <span className="font-mono text-gray-200">uname -r</span>, package updates, systemctl, disk, and memory checks.
               </div>
             )}
 
