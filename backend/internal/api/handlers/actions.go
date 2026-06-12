@@ -22,12 +22,14 @@ type ActionHandler struct {
 }
 
 type actionRunRequest struct {
-	ServerID    int    `json:"server_id"`
-	Action      string `json:"action"`
-	ServiceName string `json:"service_name,omitempty"`
-	Username    string `json:"username,omitempty"`
-	NewPassword string `json:"new_password,omitempty"`
-	Command     string `json:"command,omitempty"`
+	ServerID     int    `json:"server_id"`
+	Action       string `json:"action"`
+	ServiceName  string `json:"service_name,omitempty"`
+	Username     string `json:"username,omitempty"`
+	NewPassword  string `json:"new_password,omitempty"`
+	PackageName  string `json:"package_name,omitempty"`
+	SudoPassword string `json:"sudo_password,omitempty"`
+	Command      string `json:"command,omitempty"`
 }
 
 type actionRunResponse struct {
@@ -81,7 +83,7 @@ func (h *ActionHandler) Run(w http.ResponseWriter, r *http.Request) {
 		PrivateKey: server.PrivateKey,
 	})
 	if err != nil {
-		h.saveRun(r.Context(), req, command, "failed", "", err.Error(), createdBy(r))
+		h.saveRun(r.Context(), req, auditCommand(command, req), "failed", "", err.Error(), createdBy(r))
 		jsonError(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -95,7 +97,7 @@ func (h *ActionHandler) Run(w http.ResponseWriter, r *http.Request) {
 		errText = runErr.Error()
 	}
 
-	run, saveErr := h.saveRun(r.Context(), req, command, status, output, errText, createdBy(r))
+	run, saveErr := h.saveRun(r.Context(), req, auditCommand(command, req), status, output, errText, createdBy(r))
 	if saveErr != nil {
 		jsonError(w, saveErr.Error(), http.StatusInternalServerError)
 		return
@@ -136,22 +138,44 @@ func (h *ActionHandler) buildCommand(req actionRunRequest) (string, error) {
 			return "", fmt.Errorf("valid service name is required")
 		}
 		verb := strings.TrimPrefix(action, "service_")
-		return fmt.Sprintf("sudo systemctl %s %s", verb, shellQuote(service)), nil
+		command := fmt.Sprintf("systemctl %s %s", verb, shellQuote(service))
+		if action == "service_status" {
+			return command, nil
+		}
+		return sudoCommand(req.SudoPassword, command), nil
 	case "package_update_cache":
-		return packageManagerCommand("sudo apt-get update", "sudo dnf -y makecache", "sudo yum -y makecache"), nil
+		return packageManagerCommand(
+			sudoCommand(req.SudoPassword, "apt-get update"),
+			sudoCommand(req.SudoPassword, "dnf -y makecache"),
+			sudoCommand(req.SudoPassword, "yum -y makecache"),
+		), nil
 	case "package_list_upgrades":
 		return packageManagerCommand("apt list --upgradable 2>/dev/null || true", "dnf check-update || true", "yum check-update || true"), nil
 	case "package_upgrade_dry_run":
-		return packageManagerCommand("sudo apt-get -s upgrade", "sudo dnf -y --assumeno upgrade", "sudo yum -y --assumeno update"), nil
+		return packageManagerCommand("apt-get -s upgrade", "dnf -y --assumeno upgrade", "yum -y --assumeno update"), nil
 	case "package_upgrade":
-		return packageManagerCommand("sudo DEBIAN_FRONTEND=noninteractive apt-get -y upgrade", "sudo dnf -y upgrade", "sudo yum -y update"), nil
+		return packageManagerCommand(
+			sudoCommand(req.SudoPassword, "env DEBIAN_FRONTEND=noninteractive apt-get -y upgrade"),
+			sudoCommand(req.SudoPassword, "dnf -y upgrade"),
+			sudoCommand(req.SudoPassword, "yum -y update"),
+		), nil
+	case "package_install":
+		pkg := strings.TrimSpace(req.PackageName)
+		if !validPackageName(pkg) {
+			return "", fmt.Errorf("valid package name is required")
+		}
+		return packageManagerCommand(
+			sudoCommand(req.SudoPassword, "env DEBIAN_FRONTEND=noninteractive apt-get install -y "+shellQuote(pkg)),
+			sudoCommand(req.SudoPassword, "dnf install -y "+shellQuote(pkg)),
+			sudoCommand(req.SudoPassword, "yum install -y "+shellQuote(pkg)),
+		), nil
 	case "change_password":
 		username := strings.TrimSpace(req.Username)
 		if !validLinuxName(username) || req.NewPassword == "" {
 			return "", fmt.Errorf("valid username and new password are required")
 		}
 		pair := username + ":" + req.NewPassword
-		return fmt.Sprintf("printf %%s %s | sudo chpasswd", shellQuote(pair)), nil
+		return fmt.Sprintf("printf %%s %s | %s", shellQuote(pair), sudoCommand(req.SudoPassword, "chpasswd")), nil
 	case "custom_command":
 		if !h.allowCustomCommands {
 			return "", fmt.Errorf("custom commands are disabled on this server")
@@ -211,6 +235,7 @@ func createdBy(r *http.Request) string {
 
 var unitNameRE = regexp.MustCompile(`^[A-Za-z0-9_.@:-]+$`)
 var linuxNameRE = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+var packageNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$`)
 
 func validUnitName(value string) bool {
 	return value != "" && unitNameRE.MatchString(value)
@@ -220,8 +245,31 @@ func validLinuxName(value string) bool {
 	return linuxNameRE.MatchString(value)
 }
 
+func validPackageName(value string) bool {
+	return value != "" && packageNameRE.MatchString(value)
+}
+
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
+}
+
+func sudoCommand(password, command string) string {
+	password = strings.TrimSpace(password)
+	if password == "" {
+		return "sudo " + command
+	}
+	return fmt.Sprintf("printf '%%s\\n' %s | sudo -S -p '' %s", shellQuote(password), command)
+}
+
+func auditCommand(command string, req actionRunRequest) string {
+	if strings.TrimSpace(req.SudoPassword) != "" {
+		command = strings.ReplaceAll(command, shellQuote(strings.TrimSpace(req.SudoPassword)), "'******'")
+	}
+	if req.NewPassword != "" {
+		command = strings.ReplaceAll(command, req.NewPassword, "******")
+		command = strings.ReplaceAll(command, shellQuote(req.Username+":"+req.NewPassword), "'"+req.Username+":******'")
+	}
+	return command
 }
 
 func packageManagerCommand(apt, dnf, yum string) string {

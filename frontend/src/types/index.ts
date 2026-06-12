@@ -204,6 +204,7 @@ export type AutomationAction =
   | 'package_list_upgrades'
   | 'package_upgrade_dry_run'
   | 'package_upgrade'
+  | 'package_install'
   | 'change_password'
   | 'custom_command'
 
@@ -213,6 +214,8 @@ export interface ActionRunRequest {
   service_name?: string
   username?: string
   new_password?: string
+  package_name?: string
+  sudo_password?: string
   command?: string
 }
 
