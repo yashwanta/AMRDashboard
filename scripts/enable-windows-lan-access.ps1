@@ -2,7 +2,8 @@ param(
     [int]$AppPort = 3000,
     [string]$ConnectAddress = "127.0.0.1",
     [int]$ConnectPort = 3000,
-    [string[]]$ListenAddress = @()
+    [string[]]$ListenAddress = @(),
+    [string[]]$ExcludePrefix = @("192.168.1.")
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,12 +16,21 @@ function Require-Admin {
     }
 }
 
+function Test-ExcludedIP([string]$IP) {
+    foreach ($prefix in $ExcludePrefix) {
+        if (-not [string]::IsNullOrWhiteSpace($prefix) -and $IP.StartsWith($prefix)) {
+            return $true
+        }
+    }
+    return $false
+}
+
 function Get-LanIPv4 {
     $ipconfig = ipconfig
     foreach ($line in $ipconfig) {
         if ($line -match "IPv4 Address[.\s]*:\s*([0-9.]+)") {
             $ip = $Matches[1]
-            if ($ip -notlike "127.*" -and $ip -notlike "169.254.*") {
+            if ($ip -notlike "127.*" -and $ip -notlike "169.254.*" -and -not (Test-ExcludedIP $ip)) {
                 $ip
             }
         }
@@ -34,7 +44,12 @@ if ($ListenAddress.Count -eq 0) {
 }
 
 if ($ListenAddress.Count -eq 0) {
-    throw "No LAN IPv4 address was found. Pass -ListenAddress 192.168.x.x manually."
+    throw "No allowed LAN IPv4 address was found. Pass -ListenAddress YOUR_SERVER_IP manually."
+}
+
+$excluded = @($ListenAddress | Where-Object { Test-ExcludedIP $_ })
+if ($excluded.Count -gt 0) {
+    throw "Refusing to publish on excluded IP(s): $($excluded -join ', '). Remove -ExcludePrefix or pass a different -ListenAddress if this is intentional."
 }
 
 foreach ($ip in $ListenAddress) {
