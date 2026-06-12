@@ -3,7 +3,8 @@ param(
     [string]$ConnectAddress = "127.0.0.1",
     [int]$ConnectPort = 3000,
     [string[]]$ListenAddress = @(),
-    [string[]]$ExcludePrefix = @("192.168.1.")
+    [string[]]$ExcludePrefix = @("192.168.1."),
+    [switch]$NoSelfElevate
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,6 +13,26 @@ function Require-Admin {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        if (-not $NoSelfElevate) {
+            $args = @(
+                "-NoProfile",
+                "-ExecutionPolicy", "Bypass",
+                "-File", $PSCommandPath,
+                "-AppPort", "$AppPort",
+                "-ConnectAddress", $ConnectAddress,
+                "-ConnectPort", "$ConnectPort",
+                "-NoSelfElevate"
+            )
+            foreach ($ip in $ListenAddress) {
+                $args += @("-ListenAddress", $ip)
+            }
+            foreach ($prefix in $ExcludePrefix) {
+                $args += @("-ExcludePrefix", $prefix)
+            }
+            Write-Host "Requesting Administrator permission to configure Windows port forwarding..." -ForegroundColor Yellow
+            Start-Process powershell.exe -Verb RunAs -ArgumentList $args -Wait
+            exit 0
+        }
         throw "Run PowerShell as Administrator, then run this script again."
     }
 }
