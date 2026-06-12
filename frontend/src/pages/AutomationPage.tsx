@@ -17,6 +17,8 @@ const actionLabels: Record<AutomationAction, string> = {
   package_upgrade_dry_run: 'Preview upgrade',
   package_upgrade: 'sudo apt/dnf upgrade',
   package_install: 'sudo apt/dnf install package',
+  remediate_cve_2026_31431_linux_signed: 'Remediate CVE-2026-31431',
+  approved_custom_command: 'Approved custom command',
   change_password: 'Change user password',
   custom_command: 'Custom command',
 }
@@ -39,7 +41,18 @@ const sudoActions: AutomationAction[] = [
   'package_update_cache',
   'package_upgrade',
   'package_install',
+  'remediate_cve_2026_31431_linux_signed',
+  'approved_custom_command',
   'change_password',
+]
+
+const approvedCommandTemplates = [
+  { label: 'CVE-2026-31431 linux-signed', command: 'sudo apt-get update && sudo apt-get install -y linux-signed' },
+  { label: 'Update apt cache', command: 'sudo apt-get update' },
+  { label: 'Install package', command: 'sudo apt-get install -y ' },
+  { label: 'Restart service', command: 'sudo systemctl restart ' },
+  { label: 'Disk usage', command: 'df -h' },
+  { label: 'Memory', command: 'free -h' },
 ]
 
 export default function AutomationPage() {
@@ -82,7 +95,7 @@ export default function AutomationPage() {
     }
     if (action === 'package_install') payload.package_name = packageName
     if (sudoPasswordOverride) payload.sudo_password = sudoPasswordOverride
-    if (action === 'custom_command') payload.command = command
+    if (action === 'custom_command' || action === 'approved_custom_command') payload.command = command
     return payload
   }
 
@@ -114,7 +127,7 @@ export default function AutomationPage() {
     (!actionNeedsService || serviceName.trim() !== '') &&
     (!actionNeedsPackage || packageName.trim() !== '') &&
     (action !== 'change_password' || (username.trim() !== '' && newPassword !== '')) &&
-    (action !== 'custom_command' || command.trim() !== '')
+    ((action !== 'custom_command' && action !== 'approved_custom_command') || command.trim() !== '')
   const canRun = formReady && !mutation.isPending
 
   return (
@@ -188,9 +201,44 @@ export default function AutomationPage() {
               </div>
             )}
 
+            {action === 'approved_custom_command' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-1.5">Approved command</label>
+                  <textarea
+                    className="input bg-gray-950 border-gray-700 text-white min-h-24 font-mono"
+                    value={command}
+                    onChange={e => setCommand(e.target.value)}
+                    placeholder="sudo apt-get update && sudo apt-get install -y linux-signed"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {approvedCommandTemplates.map(template => (
+                    <button
+                      key={template.label}
+                      type="button"
+                      onClick={() => setCommand(template.command)}
+                      className="text-xs px-2 py-1 rounded-md border border-gray-700 bg-gray-950 hover:bg-gray-700 text-gray-300"
+                    >
+                      {template.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-xs text-gray-400 bg-gray-950 border border-gray-700 rounded-md p-3">
+                  Approved custom commands allow package, systemctl, journal, disk, memory, uptime, and uname commands. Full unrestricted custom commands still require <span className="font-mono text-gray-200">ALLOW_CUSTOM_COMMANDS=true</span>.
+                </div>
+              </div>
+            )}
+
             {(action === 'package_update_cache' || action === 'package_upgrade' || action === 'package_install') && (
               <div className="text-xs text-amber-100 bg-amber-950/50 border border-amber-800 rounded-md p-3">
                 This runs package manager commands with sudo on the selected server. Ubuntu/Debian uses apt-get; AlmaLinux/RHEL uses dnf or yum.
+              </div>
+            )}
+
+            {action === 'remediate_cve_2026_31431_linux_signed' && (
+              <div className="text-xs text-amber-100 bg-amber-950/50 border border-amber-800 rounded-md p-3">
+                Runs: <span className="font-mono">sudo apt-get update && sudo apt-get install -y linux-signed</span>. This remediation is for Ubuntu/Debian apt systems.
               </div>
             )}
 

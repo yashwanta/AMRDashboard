@@ -205,6 +205,8 @@ export type AutomationAction =
   | 'package_upgrade_dry_run'
   | 'package_upgrade'
   | 'package_install'
+  | 'remediate_cve_2026_31431_linux_signed'
+  | 'approved_custom_command'
   | 'change_password'
   | 'custom_command'
 

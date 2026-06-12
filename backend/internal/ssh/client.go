@@ -61,6 +61,13 @@ func (c *Client) Run(cmd string) (string, error) {
 	}
 	defer sess.Close()
 
+	modes := ssh.TerminalModes{
+		ssh.ECHO:          0,
+		ssh.TTY_OP_ISPEED: 14400,
+		ssh.TTY_OP_OSPEED: 14400,
+	}
+	_ = sess.RequestPty("xterm", 80, 40, modes)
+
 	out, err := sess.CombinedOutput(cmd)
 	if err != nil {
 		if len(out) > 0 {

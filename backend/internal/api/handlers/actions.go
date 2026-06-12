@@ -169,6 +169,14 @@ func (h *ActionHandler) buildCommand(req actionRunRequest) (string, error) {
 			sudoCommand(req.SudoPassword, "dnf install -y "+shellQuote(pkg)),
 			sudoCommand(req.SudoPassword, "yum install -y "+shellQuote(pkg)),
 		), nil
+	case "remediate_cve_2026_31431_linux_signed":
+		return cve202631431Command(req.SudoPassword), nil
+	case "approved_custom_command":
+		command := strings.TrimSpace(req.Command)
+		if command == "" {
+			return "", fmt.Errorf("command is required")
+		}
+		return approvedCustomCommand(req.SudoPassword, command)
 	case "change_password":
 		username := strings.TrimSpace(req.Username)
 		if !validLinuxName(username) || req.NewPassword == "" {
@@ -236,6 +244,7 @@ func createdBy(r *http.Request) string {
 var unitNameRE = regexp.MustCompile(`^[A-Za-z0-9_.@:-]+$`)
 var linuxNameRE = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 var packageNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$`)
+var approvedCommandTokenRE = regexp.MustCompile(`^[A-Za-z0-9_./:=@%+,-]+$`)
 
 func validUnitName(value string) bool {
 	return value != "" && unitNameRE.MatchString(value)
@@ -270,6 +279,89 @@ func auditCommand(command string, req actionRunRequest) string {
 		command = strings.ReplaceAll(command, shellQuote(req.Username+":"+req.NewPassword), "'"+req.Username+":******'")
 	}
 	return command
+}
+
+func cve202631431Command(password string) string {
+	return packageManagerCommand(
+		sudoCommand(password, "apt-get update")+" && "+sudoCommand(password, "env DEBIAN_FRONTEND=noninteractive apt-get install -y linux-signed"),
+		"echo 'CVE-2026-31431 linux-signed remediation is currently defined for Ubuntu/Debian apt systems.'; exit 2",
+		"echo 'CVE-2026-31431 linux-signed remediation is currently defined for Ubuntu/Debian apt systems.'; exit 2",
+	)
+}
+
+func approvedCustomCommand(password, command string) (string, error) {
+	if strings.ContainsAny(command, "|;`$<>") {
+		return "", fmt.Errorf("approved custom commands cannot contain pipes, semicolons, shell expansion, or redirects")
+	}
+	parts := strings.Split(command, "&&")
+	if len(parts) > 4 {
+		return "", fmt.Errorf("approved custom commands can include up to 4 commands joined with &&")
+	}
+	var out []string
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		part = strings.TrimPrefix(part, "sudo ")
+		if part == "" {
+			return "", fmt.Errorf("empty command segment")
+		}
+		if !approvedCommandPrefix(part) {
+			return "", fmt.Errorf("command is not in the approved custom command allowlist")
+		}
+		for _, token := range strings.Fields(part) {
+			if !approvedCommandTokenRE.MatchString(token) {
+				return "", fmt.Errorf("unsupported command token: %s", token)
+			}
+		}
+		if commandNeedsSudo(part) {
+			out = append(out, sudoCommand(password, part))
+		} else {
+			out = append(out, part)
+		}
+	}
+	return strings.Join(out, " && "), nil
+}
+
+func approvedCommandPrefix(command string) bool {
+	prefixes := []string{
+		"apt-get update",
+		"apt-get install",
+		"apt-get -y install",
+		"apt-get upgrade",
+		"apt-get -y upgrade",
+		"apt list",
+		"dnf makecache",
+		"dnf install",
+		"dnf upgrade",
+		"yum makecache",
+		"yum install",
+		"yum update",
+		"systemctl status",
+		"systemctl restart",
+		"systemctl start",
+		"systemctl stop",
+		"systemctl enable",
+		"systemctl disable",
+		"journalctl",
+		"df ",
+		"free",
+		"uptime",
+		"uname",
+	}
+	for _, prefix := range prefixes {
+		if command == strings.TrimSpace(prefix) || strings.HasPrefix(command, prefix+" ") {
+			return true
+		}
+	}
+	return false
+}
+
+func commandNeedsSudo(command string) bool {
+	for _, prefix := range []string{"apt-get", "dnf", "yum", "systemctl restart", "systemctl start", "systemctl stop", "systemctl enable", "systemctl disable"} {
+		if strings.HasPrefix(command, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func packageManagerCommand(apt, dnf, yum string) string {
