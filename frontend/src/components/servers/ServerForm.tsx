@@ -39,7 +39,29 @@ export default function ServerForm({ initial, defaultAssetType = 'server', submi
 
   const set = (k: keyof ServerRequest, v: string | number) => setForm(f => ({ ...f, [k]: v }))
 
+  const privateKeyHint = (value?: string) => {
+    const key = (value ?? '').trim()
+    if (!key) return ''
+    if (key.startsWith('ssh-ed25519 ') || key.startsWith('ssh-rsa ') || key.startsWith('ecdsa-sha2-')) {
+      return 'This is a public key. Paste the private key instead. It starts with -----BEGIN OPENSSH PRIVATE KEY-----.'
+    }
+    if (!key.includes('BEGIN') || !key.includes('PRIVATE KEY')) {
+      return 'Paste the full private key block, not a file path or public key.'
+    }
+    if (!key.includes('END') || !key.includes('PRIVATE KEY-----')) {
+      return 'The private key looks incomplete. Include the BEGIN line, all middle lines, and the END line.'
+    }
+    return ''
+  }
+
+  const ubuntuKeyHint = form.auth_type === 'key' ? privateKeyHint(form.private_key) : ''
+  const pveKeyHint = (form.proxmox_auth_type ?? 'password') === 'key' ? privateKeyHint(form.proxmox_private_key) : ''
+
   const handleTest = async () => {
+    if (ubuntuKeyHint) {
+      setTestResult({ success: false, msg: ubuntuKeyHint })
+      return
+    }
     setTesting(true)
     setTestResult(null)
     const res = await testConnection(form)
@@ -49,6 +71,10 @@ export default function ServerForm({ initial, defaultAssetType = 'server', submi
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (ubuntuKeyHint || pveKeyHint) {
+      setTestResult({ success: false, msg: ubuntuKeyHint || pveKeyHint })
+      return
+    }
     setSaving(true)
     await onSubmit(form)
     setSaving(false)
@@ -99,7 +125,9 @@ export default function ServerForm({ initial, defaultAssetType = 'server', submi
         ) : (
           <div className="col-span-2">
             <label className={labelCls}>Private key {initial && <span className="text-gray-500 font-normal">(leave blank to keep)</span>}</label>
-            <textarea className={`${inputCls} font-mono text-xs`} rows={4} value={form.private_key ?? ''} onChange={e => set('private_key', e.target.value)} placeholder="-----BEGIN RSA PRIVATE KEY-----" />
+            <textarea className={`${inputCls} font-mono text-xs`} rows={6} value={form.private_key ?? ''} onChange={e => set('private_key', e.target.value)} placeholder={'-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----'} />
+            <p className="text-xs text-gray-500 mt-1">Do not paste the public key that starts with ssh-ed25519. Paste the private key from the app host.</p>
+            {ubuntuKeyHint && <p className="text-xs text-red-300 mt-1">{ubuntuKeyHint}</p>}
           </div>
         )}
 
@@ -137,7 +165,9 @@ export default function ServerForm({ initial, defaultAssetType = 'server', submi
         ) : (
           <div className="col-span-2">
             <label className={labelCls}>PVE private key {initial && <span className="text-gray-500 font-normal">(leave blank to keep)</span>}</label>
-            <textarea className={`${inputCls} font-mono text-xs`} rows={4} value={form.proxmox_private_key ?? ''} onChange={e => set('proxmox_private_key', e.target.value)} placeholder="-----BEGIN RSA PRIVATE KEY-----" />
+            <textarea className={`${inputCls} font-mono text-xs`} rows={6} value={form.proxmox_private_key ?? ''} onChange={e => set('proxmox_private_key', e.target.value)} placeholder={'-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----'} />
+            <p className="text-xs text-gray-500 mt-1">Do not paste the public key that starts with ssh-ed25519. Paste the private key from the app host.</p>
+            {pveKeyHint && <p className="text-xs text-red-300 mt-1">{pveKeyHint}</p>}
           </div>
         )}
         <div className="col-span-2">

@@ -79,6 +79,10 @@ foreach ($ip in $ListenAddress) {
     netsh interface portproxy add v4tov4 listenaddress=$ip listenport=$AppPort connectaddress=$ConnectAddress connectport=$ConnectPort
 }
 
+Write-Host "Refreshing Windows IP Helper service so portproxy rules take effect..." -ForegroundColor Cyan
+Restart-Service iphlpsvc -Force
+Start-Sleep -Seconds 2
+
 $ruleName = "RoboWatch Web $AppPort"
 if (-not (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)) {
     New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Action Allow -Protocol TCP -LocalPort $AppPort | Out-Null

@@ -26,9 +26,19 @@ func Connect(cfg Config) (*Client, error) {
 
 	switch cfg.AuthType {
 	case "key":
-		signer, err := ssh.ParsePrivateKey([]byte(cfg.PrivateKey))
+		privateKey := strings.TrimSpace(cfg.PrivateKey)
+		if privateKey == "" {
+			return nil, fmt.Errorf("private key is empty. Paste the full private key block that starts with -----BEGIN OPENSSH PRIVATE KEY-----")
+		}
+		if strings.HasPrefix(privateKey, "ssh-ed25519 ") || strings.HasPrefix(privateKey, "ssh-rsa ") || strings.HasPrefix(privateKey, "ecdsa-sha2-") {
+			return nil, fmt.Errorf("private key field contains a public key. Paste the private key block, not the public key line")
+		}
+		if !strings.Contains(privateKey, "BEGIN") || !strings.Contains(privateKey, "PRIVATE KEY") {
+			return nil, fmt.Errorf("private key format is invalid. Paste the full private key block, not a file path or public key")
+		}
+		signer, err := ssh.ParsePrivateKey([]byte(privateKey))
 		if err != nil {
-			return nil, fmt.Errorf("parse private key: %w", err)
+			return nil, fmt.Errorf("parse private key: %w. Paste the full private key including BEGIN and END lines", err)
 		}
 		auth = append(auth, ssh.PublicKeys(signer))
 	default:
