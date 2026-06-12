@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { Play, Terminal, Wrench, KeyRound, ShieldCheck, X } from 'lucide-react'
@@ -18,6 +18,8 @@ const actionLabels: Record<AutomationAction, string> = {
   package_upgrade: 'sudo apt/dnf upgrade',
   package_install: 'sudo apt/dnf install package',
   remediate_cve_2026_31431_linux_signed: 'Remediate CVE-2026-31431',
+  remediate_cve_2026_43494_linux_signed_upgrade: 'Remediate CVE-2026-43494',
+  system_reboot: 'Restart server/workstation',
   approved_custom_command: 'Approved custom command',
   change_password: 'Change user password',
   custom_command: 'Custom command',
@@ -42,15 +44,19 @@ const sudoActions: AutomationAction[] = [
   'package_upgrade',
   'package_install',
   'remediate_cve_2026_31431_linux_signed',
+  'remediate_cve_2026_43494_linux_signed_upgrade',
+  'system_reboot',
   'approved_custom_command',
   'change_password',
 ]
 
 const approvedCommandTemplates = [
   { label: 'CVE-2026-31431 linux-signed', command: 'sudo apt-get update && sudo apt-get install -y linux-signed' },
+  { label: 'CVE-2026-43494 linux-signed upgrade', command: 'sudo apt-get update && sudo apt-get install -y --only-upgrade linux-signed' },
   { label: 'Update apt cache', command: 'sudo apt-get update' },
   { label: 'Install package', command: 'sudo apt-get install -y ' },
   { label: 'Restart service', command: 'sudo systemctl restart ' },
+  { label: 'Restart server/workstation', command: 'sudo systemctl reboot' },
   { label: 'Disk usage', command: 'df -h' },
   { label: 'Memory', command: 'free -h' },
 ]
@@ -69,6 +75,9 @@ export default function AutomationPage() {
   const [sudoOpen, setSudoOpen] = useState(false)
   const [command, setCommand] = useState('')
   const [lastOutput, setLastOutput] = useState('')
+  const [activeRunId, setActiveRunId] = useState<number | null>(null)
+  const [runStartedAt, setRunStartedAt] = useState<Date | null>(null)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
 
   const selectedServer = useMemo(
     () => servers.find(s => s.id === serverId),
@@ -78,13 +87,35 @@ export default function AutomationPage() {
   const mutation = useMutation({
     mutationFn: (payload: ActionRunRequest) => runAction(payload),
     onSuccess: run => {
-      setLastOutput([run.output, run.error].filter(Boolean).join('\n'))
+      setActiveRunId(run.id)
+      setRunStartedAt(new Date(run.created_at))
+      setElapsedSeconds(0)
+      setLastOutput([`Started ${actionLabels[run.action] || run.action}.`, run.output, run.error].filter(Boolean).join('\n'))
       qc.invalidateQueries({ queryKey: ['action-history'] })
     },
     onError: (err: any) => {
       setLastOutput(err.response?.data?.error || err.message || 'Action failed')
     },
   })
+
+  const activeRun = useMemo(
+    () => history.find(run => run.id === activeRunId),
+    [history, activeRunId]
+  )
+
+  useEffect(() => {
+    if (!activeRun || activeRun.status === 'running') return
+    setLastOutput([activeRun.output, activeRun.error].filter(Boolean).join('\n') || `${actionLabels[activeRun.action] || activeRun.action} finished with status: ${activeRun.status}`)
+  }, [activeRun])
+
+  useEffect(() => {
+    if (!runStartedAt || (activeRun && activeRun.status !== 'running')) return
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - runStartedAt.getTime()) / 1000)))
+      qc.invalidateQueries({ queryKey: ['action-history'] })
+    }, 3000)
+    return () => window.clearInterval(timer)
+  }, [activeRun?.status, qc, runStartedAt])
 
   function buildPayload(sudoPasswordOverride = '') {
     const payload: ActionRunRequest = { server_id: serverId, action }
@@ -242,6 +273,18 @@ export default function AutomationPage() {
               </div>
             )}
 
+            {action === 'remediate_cve_2026_43494_linux_signed_upgrade' && (
+              <div className="text-xs text-amber-100 bg-amber-950/50 border border-amber-800 rounded-md p-3">
+                Runs: <span className="font-mono">sudo apt-get update && sudo apt-get install -y --only-upgrade linux-signed</span>. This remediation is for Ubuntu 24.04 apt systems.
+              </div>
+            )}
+
+            {action === 'system_reboot' && (
+              <div className="text-xs text-red-100 bg-red-950/40 border border-red-800 rounded-md p-3">
+                This restarts the selected server or workstation. The SSH session may disconnect while the machine reboots.
+              </div>
+            )}
+
             {action === 'custom_command' && (
               <div className="text-xs text-gray-400 bg-gray-950 border border-gray-700 rounded-md p-3">
                 Custom commands require backend environment variable <span className="font-mono text-gray-200">ALLOW_CUSTOM_COMMANDS=true</span>. Approved actions above do not need that flag.
@@ -270,6 +313,15 @@ export default function AutomationPage() {
               <Terminal size={16} className="text-green-300" />
               <h2 className="font-semibold text-white text-sm">Output</h2>
             </div>
+            {activeRun && (
+              <div className="px-4 py-3 border-b border-gray-700 bg-gray-900/70 text-xs text-gray-300 flex flex-wrap items-center gap-3">
+                <span className={activeRun.status === 'running' ? 'text-blue-300' : activeRun.status === 'success' ? 'text-green-300' : 'text-red-300'}>
+                  {activeRun.status === 'running' ? `Running ${elapsedSeconds}s` : activeRun.status}
+                </span>
+                <span>{actionLabels[activeRun.action] || activeRun.action}</span>
+                <span className="font-mono text-gray-500 truncate max-w-full">{activeRun.command}</span>
+              </div>
+            )}
             <pre className="min-h-48 max-h-80 overflow-auto p-4 text-xs text-gray-200 bg-gray-950 whitespace-pre-wrap">{lastOutput || 'Run an action to see output here.'}</pre>
           </div>
 
@@ -296,7 +348,7 @@ export default function AutomationPage() {
                     <td className="px-4 py-3 text-gray-400 whitespace-nowrap">{format(parseISO(run.created_at), 'MMM d, h:mm a')}</td>
                     <td className="px-4 py-3 text-gray-200">{actionLabels[run.action] || run.action}</td>
                     <td className="px-4 py-3">
-                      <span className={run.status === 'success' ? 'text-green-300' : 'text-red-300'}>{run.status}</span>
+                      <span className={run.status === 'running' ? 'text-blue-300' : run.status === 'success' ? 'text-green-300' : 'text-red-300'}>{run.status}</span>
                     </td>
                     <td className="px-4 py-3 text-gray-400 font-mono text-xs max-w-md truncate" title={run.command}>{run.command}</td>
                   </tr>

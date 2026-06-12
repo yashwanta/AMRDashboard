@@ -55,6 +55,47 @@ func TestBuildCVERemediationUsesLinuxSigned(t *testing.T) {
 	}
 }
 
+func TestBuildCVE43494RemediationOnlyUpgradesLinuxSigned(t *testing.T) {
+	handler := NewActionHandler(nil, "", false)
+	req := actionRunRequest{
+		Action:       "remediate_cve_2026_43494_linux_signed_upgrade",
+		SudoPassword: "Secret123!",
+	}
+
+	command, err := handler.buildCommand(req)
+	if err != nil {
+		t.Fatalf("buildCommand returned error: %v", err)
+	}
+	if !strings.Contains(command, "apt-get update") {
+		t.Fatalf("expected apt-get update command, got %q", command)
+	}
+	if !strings.Contains(command, "apt-get install -y --only-upgrade linux-signed") {
+		t.Fatalf("expected linux-signed only-upgrade command, got %q", command)
+	}
+	if strings.Contains(auditCommand(command, req), "Secret123!") {
+		t.Fatalf("audit command leaked sudo password")
+	}
+}
+
+func TestBuildSystemRebootUsesBackgroundSystemctl(t *testing.T) {
+	handler := NewActionHandler(nil, "", false)
+	req := actionRunRequest{
+		Action:       "system_reboot",
+		SudoPassword: "Secret123!",
+	}
+
+	command, err := handler.buildCommand(req)
+	if err != nil {
+		t.Fatalf("buildCommand returned error: %v", err)
+	}
+	if !strings.Contains(command, "nohup systemctl reboot") {
+		t.Fatalf("expected background reboot command, got %q", command)
+	}
+	if strings.Contains(auditCommand(command, req), "Secret123!") {
+		t.Fatalf("audit command leaked sudo password")
+	}
+}
+
 func TestApprovedCustomCommandAllowsCVERemediationTemplate(t *testing.T) {
 	handler := NewActionHandler(nil, "", false)
 	req := actionRunRequest{

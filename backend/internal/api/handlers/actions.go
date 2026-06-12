@@ -74,6 +74,19 @@ func (h *ActionHandler) Run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	audit := auditCommand(command, req)
+	run, saveErr := h.saveRun(r.Context(), req, audit, "running", "Queued. Connecting over SSH...", "", createdBy(r))
+	if saveErr != nil {
+		jsonError(w, saveErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	go h.executeRun(context.Background(), run.ID, server, command)
+
+	jsonOK(w, run)
+}
+
+func (h *ActionHandler) executeRun(ctx context.Context, runID int64, server models.ServerRequest, command string) {
 	client, err := amrssh.Connect(amrssh.Config{
 		Host:       server.Host,
 		Port:       server.Port,
@@ -83,8 +96,7 @@ func (h *ActionHandler) Run(w http.ResponseWriter, r *http.Request) {
 		PrivateKey: server.PrivateKey,
 	})
 	if err != nil {
-		h.saveRun(r.Context(), req, auditCommand(command, req), "failed", "", err.Error(), createdBy(r))
-		jsonError(w, err.Error(), http.StatusBadGateway)
+		_ = h.updateRun(ctx, runID, "failed", "", err.Error())
 		return
 	}
 	defer client.Close()
@@ -97,12 +109,7 @@ func (h *ActionHandler) Run(w http.ResponseWriter, r *http.Request) {
 		errText = runErr.Error()
 	}
 
-	run, saveErr := h.saveRun(r.Context(), req, auditCommand(command, req), status, output, errText, createdBy(r))
-	if saveErr != nil {
-		jsonError(w, saveErr.Error(), http.StatusInternalServerError)
-		return
-	}
-	jsonOK(w, run)
+	_ = h.updateRun(ctx, runID, status, output, errText)
 }
 
 func (h *ActionHandler) History(w http.ResponseWriter, r *http.Request) {
@@ -171,6 +178,10 @@ func (h *ActionHandler) buildCommand(req actionRunRequest) (string, error) {
 		), nil
 	case "remediate_cve_2026_31431_linux_signed":
 		return cve202631431Command(req.SudoPassword), nil
+	case "remediate_cve_2026_43494_linux_signed_upgrade":
+		return cve202643494Command(req.SudoPassword), nil
+	case "system_reboot":
+		return sudoCommand(req.SudoPassword, "sh -c 'nohup systemctl reboot >/dev/null 2>&1 &'"), nil
 	case "approved_custom_command":
 		command := strings.TrimSpace(req.Command)
 		if command == "" {
@@ -236,6 +247,15 @@ func (h *ActionHandler) saveRun(ctx context.Context, req actionRunRequest, comma
 	return run, err
 }
 
+func (h *ActionHandler) updateRun(ctx context.Context, id int64, status, output, errText string) error {
+	_, err := h.db.Exec(ctx, `
+		UPDATE action_runs
+		SET status=$2, output=$3, error=$4
+		WHERE id=$1`,
+		id, status, output, errText)
+	return err
+}
+
 func createdBy(r *http.Request) string {
 	username, _ := usernameFromRequest(r)
 	return username
@@ -289,6 +309,14 @@ func cve202631431Command(password string) string {
 	)
 }
 
+func cve202643494Command(password string) string {
+	return packageManagerCommand(
+		sudoCommand(password, "apt-get update")+" && "+sudoCommand(password, "env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade linux-signed"),
+		"echo 'CVE-2026-43494 linux-signed remediation is currently defined for Ubuntu 24.04/Debian apt systems.'; exit 2",
+		"echo 'CVE-2026-43494 linux-signed remediation is currently defined for Ubuntu 24.04/Debian apt systems.'; exit 2",
+	)
+}
+
 func approvedCustomCommand(password, command string) (string, error) {
 	if strings.ContainsAny(command, "|;`$<>") {
 		return "", fmt.Errorf("approved custom commands cannot contain pipes, semicolons, shell expansion, or redirects")
@@ -325,6 +353,7 @@ func approvedCommandPrefix(command string) bool {
 	prefixes := []string{
 		"apt-get update",
 		"apt-get install",
+		"apt-get install -y --only-upgrade",
 		"apt-get -y install",
 		"apt-get upgrade",
 		"apt-get -y upgrade",

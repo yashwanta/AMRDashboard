@@ -206,6 +206,8 @@ export type AutomationAction =
   | 'package_upgrade'
   | 'package_install'
   | 'remediate_cve_2026_31431_linux_signed'
+  | 'remediate_cve_2026_43494_linux_signed_upgrade'
+  | 'system_reboot'
   | 'approved_custom_command'
   | 'change_password'
   | 'custom_command'
@@ -226,7 +228,7 @@ export interface ActionRun {
   server_id: number
   action: AutomationAction
   command: string
-  status: 'success' | 'failed'
+  status: 'running' | 'success' | 'failed'
   output: string
   error?: string
   created_at: string
