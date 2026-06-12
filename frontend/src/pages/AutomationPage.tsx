@@ -74,14 +74,15 @@ export default function AutomationPage() {
   const [runStartedAt, setRunStartedAt] = useState<Date | null>(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [setupPublicKey, setSetupPublicKey] = useState('')
+  const [setupUser, setSetupUser] = useState('robowatch')
   const [setupCopied, setSetupCopied] = useState<string | null>(null)
+  const [setupCopyError, setSetupCopyError] = useState('')
 
   const selectedServer = useMemo(
     () => servers.find(s => s.id === serverId),
     [servers, serverId]
   )
 
-  const setupUser = selectedServer?.username?.trim() || 'robowatch'
   const setupHost = selectedServer?.host || 'target-server'
   const setupPort = selectedServer?.port || 22
 
@@ -99,25 +100,32 @@ export default function AutomationPage() {
       '  exit 1',
       'fi',
       '',
-      'if ! id "$OPSFORGE_USER" >/dev/null 2>&1; then',
-      '  useradd -m -s /bin/bash "$OPSFORGE_USER"',
+      'if [ "$OPSFORGE_USER" = "root" ]; then',
+      '  OPSFORGE_HOME="/root"',
+      'else',
+      '  OPSFORGE_HOME="/home/$OPSFORGE_USER"',
+      '  if ! id "$OPSFORGE_USER" >/dev/null 2>&1; then',
+      '    useradd -m -s /bin/bash "$OPSFORGE_USER"',
+      '  fi',
       'fi',
       '',
-      'install -d -m 700 -o "$OPSFORGE_USER" -g "$OPSFORGE_USER" "/home/$OPSFORGE_USER/.ssh"',
-      'cat > "/home/$OPSFORGE_USER/.ssh/authorized_keys" <<OPSFORGE_AUTH_KEY',
+      'install -d -m 700 -o "$OPSFORGE_USER" -g "$OPSFORGE_USER" "$OPSFORGE_HOME/.ssh"',
+      'cat > "$OPSFORGE_HOME/.ssh/authorized_keys" <<OPSFORGE_AUTH_KEY',
       '$OPSFORGE_KEY',
       'OPSFORGE_AUTH_KEY',
-      'chown "$OPSFORGE_USER:$OPSFORGE_USER" "/home/$OPSFORGE_USER/.ssh/authorized_keys"',
-      'chmod 600 "/home/$OPSFORGE_USER/.ssh/authorized_keys"',
+      'chown "$OPSFORGE_USER:$OPSFORGE_USER" "$OPSFORGE_HOME/.ssh/authorized_keys"',
+      'chmod 600 "$OPSFORGE_HOME/.ssh/authorized_keys"',
       '',
-      'cat > "/etc/sudoers.d/opsforge-$OPSFORGE_USER" <<EOF',
+      'if [ "$OPSFORGE_USER" != "root" ]; then',
+      '  cat > "/etc/sudoers.d/opsforge-$OPSFORGE_USER" <<EOF',
       '$OPSFORGE_USER ALL=(root) NOPASSWD: /bin/sh, /usr/bin/sh',
       'EOF',
-      'chmod 440 "/etc/sudoers.d/opsforge-$OPSFORGE_USER"',
-      'visudo -cf "/etc/sudoers.d/opsforge-$OPSFORGE_USER"',
+      '  chmod 440 "/etc/sudoers.d/opsforge-$OPSFORGE_USER"',
+      '  visudo -cf "/etc/sudoers.d/opsforge-$OPSFORGE_USER"',
+      'fi',
       '',
       'echo "OpsForge bootstrap complete."',
-      'echo "Next: update the server record to use this username and private key, then run Check privilege access."',
+      'echo "Next: update the server record to use username: $OPSFORGE_USER, auth type: Private Key, then run Check privilege access."',
     ].join('\n')
   }, [setupPublicKey, setupUser])
 
@@ -202,9 +210,27 @@ export default function AutomationPage() {
   }
 
   async function copyText(label: string, text: string) {
-    await navigator.clipboard.writeText(text)
-    setSetupCopied(label)
-    window.setTimeout(() => setSetupCopied(null), 1800)
+    setSetupCopyError('')
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        const textArea = document.createElement('textarea')
+        textArea.value = text
+        textArea.setAttribute('readonly', '')
+        textArea.style.position = 'fixed'
+        textArea.style.left = '-9999px'
+        document.body.appendChild(textArea)
+        textArea.select()
+        const copied = document.execCommand('copy')
+        document.body.removeChild(textArea)
+        if (!copied) throw new Error('Browser blocked clipboard copy')
+      }
+      setSetupCopied(label)
+      window.setTimeout(() => setSetupCopied(null), 1800)
+    } catch (err: any) {
+      setSetupCopyError(`${err.message || 'Copy blocked'}. Select the text below and press Ctrl+C.`)
+    }
   }
 
   function runPrivilegeCheck() {
@@ -368,15 +394,25 @@ export default function AutomationPage() {
                 <div className="rounded-md border border-gray-700 bg-gray-950 p-3">
                   <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">Selected target</p>
                   <p className="font-mono text-gray-200">{setupUser}@{setupHost}:{setupPort}</p>
-                  <p className="text-xs text-gray-500 mt-2">Use a dedicated user like robowatch when possible. Root SSH also works if your policy allows it.</p>
+                  <p className="text-xs text-gray-500 mt-2">Use the automation username below when you edit the server record. A dedicated user is safer than root.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-1.5">Automation username</label>
+                  <input
+                    className="input bg-gray-950 border-gray-700 text-white"
+                    value={setupUser}
+                    onChange={e => setSetupUser(e.target.value || 'robowatch')}
+                    placeholder="robowatch"
+                  />
+                  <p className="text-xs text-gray-500 mt-1.5">Recommended: robowatch. Use root only if your security policy allows root SSH.</p>
                 </div>
                 <div className="space-y-2">
                   {[
                     'Generate an SSH key on the machine running this app.',
                     'Paste the public key below.',
                     'Run the generated bootstrap script on the target as root or with sudo.',
-                    'Edit the server record to use Private Key auth.',
-                    'Run Check privilege access before patching.',
+                    `Edit the server record: username ${setupUser || 'robowatch'}, auth type Private Key.`,
+                    'Paste the private key into the server record, save, then run Check privilege access.',
                   ].map((step, idx) => (
                     <div key={step} className="flex gap-2 text-xs text-gray-300">
                       <span className="w-5 h-5 rounded-full bg-cyan-950 text-cyan-200 border border-cyan-800 flex items-center justify-center flex-shrink-0">{idx + 1}</span>
@@ -424,6 +460,7 @@ export default function AutomationPage() {
                   </button>
                   {setupCopied && <span className="text-xs text-green-300 self-center">Copied {setupCopied}</span>}
                 </div>
+                {setupCopyError && <p className="text-xs text-red-300 bg-red-950/40 border border-red-800 rounded-md p-2">{setupCopyError}</p>}
                 <pre className="max-h-72 overflow-auto p-3 text-xs text-gray-200 bg-gray-950 border border-gray-700 rounded-md whitespace-pre-wrap">{bootstrapScript}</pre>
                 <p className="text-xs text-amber-200 bg-amber-950/40 border border-amber-800 rounded-md p-3">
                   This app still does not collect sudo passwords. The bootstrap is a one-time target-side admin step that enables approved OpsForge scripts to run without password prompts.
