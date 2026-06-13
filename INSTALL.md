@@ -10,6 +10,8 @@ The easiest production install is the Linux Docker installer. It supports Ubuntu
 
 For a copyable installer archive for Ubuntu, AlmaLinux, and Windows, see [docs/INSTALL_PACKAGE.md](docs/INSTALL_PACKAGE.md).
 
+For OpsForge SSH public/private key setup and the security reason RoboWatch avoids root passwords, see [docs/OPSFORGE_SECURITY.md](docs/OPSFORGE_SECURITY.md).
+
 ## Linux Quick Install
 
 On the Ubuntu or AlmaLinux server:
@@ -153,7 +155,7 @@ Important settings:
 | `SCHEDULE_AM` | `0 6 * * *` | Morning sync cron |
 | `SCHEDULE_PM` | `0 18 * * *` | Evening sync cron |
 
-OpsForge does not accept sudo passwords in the web UI or generated commands. Privileged actions require the target SSH account to be `root` or to have passwordless sudo configured outside RoboWatch. Package remediation scripts check for root privileges before running `apt-get`, `dnf`, or `yum`.
+OpsForge does not accept sudo passwords in the web UI or generated commands. Privileged actions require the target SSH account to be `root` or to have passwordless sudo configured outside RoboWatch. Package remediation scripts check for root privileges before running `apt-get`, `dnf`, or `yum`. The recommended setup is a dedicated automation user with SSH public/private key authentication; see [docs/OPSFORGE_SECURITY.md](docs/OPSFORGE_SECURITY.md).
 
 ## Troubleshooting
 

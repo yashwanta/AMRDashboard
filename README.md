@@ -64,6 +64,7 @@ sudo systemctl status robowatch
 
 Step-by-step install guide: [INSTALL.md](INSTALL.md)  
 Copyable Ubuntu/AlmaLinux/Windows install package: [docs/INSTALL_PACKAGE.md](docs/INSTALL_PACKAGE.md)  
+OpsForge SSH key security wiki: [docs/OPSFORGE_SECURITY.md](docs/OPSFORGE_SECURITY.md)  
 More deployment details: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 
 ---
@@ -112,7 +113,7 @@ npm run dev
 | `SCHEDULE_AM` | `0 6 * * *` | Morning auto-sync (6 AM) |
 | `SCHEDULE_PM` | `0 18 * * *` | Evening auto-sync (6 PM) |
 
-OpsForge security note: the app does not collect, store, echo, or pipe sudo passwords. Privileged remediation actions require the target SSH account to be `root` or to have passwordless sudo configured outside RoboWatch. Remediation scripts check for root privileges before running package-manager commands.
+OpsForge security note: the app does not collect, store, echo, or pipe sudo passwords. Privileged remediation actions require the target SSH account to be `root` or to have passwordless sudo configured outside RoboWatch. Remediation scripts check for root privileges before running package-manager commands. For the recommended public/private key setup, see [docs/OPSFORGE_SECURITY.md](docs/OPSFORGE_SECURITY.md).
 
 ---
 
