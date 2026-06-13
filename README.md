@@ -33,6 +33,42 @@ docker compose up -d
 
 ---
 
+## Build Container Images
+
+```bash
+bash scripts/build-container-images.sh
+```
+
+Optional custom tags:
+
+```bash
+BACKEND_IMAGE=robowatch-backend:1.0 FRONTEND_IMAGE=robowatch-frontend:1.0 bash scripts/build-container-images.sh
+```
+
+## Linux Docker Installer
+
+For a full Ubuntu, Debian, AlmaLinux, or RHEL-family install with Docker and systemd restart support:
+
+```bash
+sudo bash scripts/install-linux-docker.sh
+```
+
+The installer installs Docker Engine when needed, builds the app images, starts PostgreSQL/backend/frontend containers, and creates a `robowatch` systemd service.
+
+Useful options:
+
+```bash
+sudo APP_PORT=8088 API_PORT=18080 bash scripts/install-linux-docker.sh
+sudo systemctl status robowatch
+```
+
+Step-by-step install guide: [INSTALL.md](INSTALL.md)  
+Copyable Ubuntu/AlmaLinux/Windows install package: [docs/INSTALL_PACKAGE.md](docs/INSTALL_PACKAGE.md)  
+OpsForge SSH key security wiki: [docs/OPSFORGE_SECURITY.md](docs/OPSFORGE_SECURITY.md)  
+More deployment details: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+
+---
+
 ## Development Setup
 
 ### Prerequisites
@@ -65,13 +101,19 @@ npm run dev
 
 ## Environment Variables
 
-| Variable         | Default                                           | Description                              |
-|------------------|---------------------------------------------------|------------------------------------------|
-| `DATABASE_URL`   | `postgres://amr:amr@localhost:5432/amrdashboard`  | PostgreSQL connection string             |
-| `SERVER_PORT`    | `8080`                                            | Backend HTTP port                        |
-| `ENCRYPTION_KEY` | *(required)*                                      | 32-byte AES key for SSH credential store |
-| `SCHEDULE_AM`    | `0 6 * * *`                                       | Morning auto-sync (6 AM)                 |
-| `SCHEDULE_PM`    | `0 18 * * *`                                      | Evening auto-sync (6 PM)                 |
+| Variable | Default | Description |
+| --- | --- | --- |
+| `DATABASE_URL` | `postgres://amr:amr@localhost:5432/amrdashboard` | PostgreSQL connection string |
+| `SERVER_PORT` | `8080` | Backend HTTP port |
+| `ENCRYPTION_KEY` | *(required)* | 32-byte AES key for SSH credential store |
+| `SESSION_SECRET` | `ENCRYPTION_KEY` | Secret used to sign web login tokens |
+| `ADMIN_USERNAME` | `admin` | Web login username |
+| `ADMIN_PASSWORD` | `admin` | Web login password; change this before sharing the app |
+| `ALLOW_CUSTOM_COMMANDS` | `false` | Enables unrestricted Automation commands; approved actions do not need this |
+| `SCHEDULE_AM` | `0 6 * * *` | Morning auto-sync (6 AM) |
+| `SCHEDULE_PM` | `0 18 * * *` | Evening auto-sync (6 PM) |
+
+OpsForge security note: the app does not collect, store, echo, or pipe sudo passwords. Privileged remediation actions require the target SSH account to be `root` or to have passwordless sudo configured outside RoboWatch. Remediation scripts check for root privileges before running package-manager commands. For the recommended public/private key setup, see [docs/OPSFORGE_SECURITY.md](docs/OPSFORGE_SECURITY.md).
 
 ---
 

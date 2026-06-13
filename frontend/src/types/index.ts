@@ -5,6 +5,13 @@ export interface Server {
   port: number
   username: string
   auth_type: 'password' | 'key'
+  asset_type: 'server' | 'endpoint'
+  proxmox_host: string
+  proxmox_port: number
+  proxmox_username: string
+  proxmox_auth_type: 'password' | 'key'
+  vmid: string
+  app_log_paths: string
   last_sync_at: string | null
   status: 'online' | 'offline' | 'error' | 'unknown'
   created_at: string
@@ -16,8 +23,17 @@ export interface ServerRequest {
   port: number
   username: string
   auth_type: 'password' | 'key'
+  asset_type?: 'server' | 'endpoint'
   password?: string
   private_key?: string
+  proxmox_host?: string
+  proxmox_port?: number
+  proxmox_username?: string
+  proxmox_auth_type?: 'password' | 'key'
+  proxmox_password?: string
+  proxmox_private_key?: string
+  vmid?: string
+  app_log_paths?: string
 }
 
 export interface LogEvent {
@@ -31,8 +47,20 @@ export interface LogEvent {
     | 'ubuntu_server_reboot'
     | 'proxmox_host_shutdown'
     | 'proxmox_host_reboot'
-    | 'vm_shutdown'
+    | 'vm_stopped'
+    | 'vm_started'
     | 'vm_reboot'
+    | 'vm_killed_by_oom'
+    | 'host_memory_exhaustion'
+    | 'swap_full'
+    | 'backup_job'
+    | 'backup_found_vm_stopped'
+    | 'ha_action'
+    | 'disk_smart_issue'
+    | 'network_dhcp_failure'
+    | 'ssh_login_activity'
+    | 'service_failure'
+    | 'ubuntu_log_gap'
     | 'power_network_event'
     | 'unknown'
     | 'crash'
@@ -46,6 +74,10 @@ export interface LogEvent {
   severity: 'critical' | 'high' | 'medium' | 'low' | 'info'
   message: string
   source: string
+  raw_line?: string
+  plain_english?: string
+  recommended_action?: string
+  oom_analysis?: OOMAnalysis
   created_at: string
 }
 
@@ -60,6 +92,11 @@ export interface DashboardStats {
   robot_offline_count: number
   robot_online_count: number
   disk_error_count: number
+  ubuntu_event_count: number
+  proxmox_event_count: number
+  vm_event_count: number
+  memory_event_count: number
+  backup_event_count: number
 }
 
 export interface TimelinePoint {
@@ -81,3 +118,142 @@ export interface SyncJob {
 
 export type EventType = LogEvent['event_type']
 export type Severity = LogEvent['severity']
+
+export interface IncidentEvidence {
+  timestamp: string
+  event_type: string
+  severity: string
+  source: string
+  message: string
+}
+
+export interface IncidentSummary {
+  server_id: number
+  server_name: string
+  proxmox_host: string
+  vmid: string
+  from: string
+  to: string
+  what_happened: string
+  started_at: string | null
+  recovered_at: string | null
+  root_cause: string
+  recommended_fix: string
+  oom_analysis?: OOMAnalysis
+  evidence: IncidentEvidence[]
+}
+
+export interface OOMAnalysis {
+  killed_vmid?: string
+  killed_vm_name?: string
+  killed_pid?: string
+  killed_process?: string
+  killed_anon_gb?: number
+  killed_total_gb?: number
+  top_vmid?: string
+  top_vm_name?: string
+  top_pid?: string
+  top_rss_gb?: number
+  top_config_mb?: number
+  proxmox_host?: string
+  confidence: string
+  explanation: string
+  recommendation: string
+}
+
+export interface LoginResponse {
+  token: string
+  username: string
+  role: UserRole
+  expires_at: string
+}
+
+export type UserRole =
+  | 'Super Admin'
+  | 'Global Admin'
+  | 'Global Admin Read Only'
+  | 'Location Admin'
+  | 'IT User'
+
+export interface AppUser {
+  id: number
+  username: string
+  role: UserRole
+  location: string
+  status: 'active' | 'disabled'
+  created_at: string
+  updated_at: string
+}
+
+export interface AppUserRequest {
+  username?: string
+  password?: string
+  role: UserRole
+  location?: string
+  status?: 'active' | 'disabled'
+}
+
+export type AutomationAction =
+  | 'privilege_check'
+  | 'service_status'
+  | 'service_restart'
+  | 'service_start'
+  | 'service_stop'
+  | 'service_enable'
+  | 'service_disable'
+  | 'package_update_cache'
+  | 'package_list_upgrades'
+  | 'package_upgrade_dry_run'
+  | 'package_upgrade'
+  | 'package_install'
+  | 'remediate_cve_2026_31431_linux_signed'
+  | 'remediate_cve_2026_43494_linux_signed_upgrade'
+  | 'remediate_cve_2026_43494_ubuntu_generic_kernel'
+  | 'system_reboot'
+  | 'approved_custom_command'
+
+export interface ActionRunRequest {
+  server_id: number
+  action: AutomationAction
+  service_name?: string
+  package_name?: string
+  command?: string
+}
+
+export interface ActionRun {
+  id: number
+  server_id: number
+  action: AutomationAction
+  command: string
+  status: 'running' | 'success' | 'failed'
+  output: string
+  error?: string
+  created_at: string
+}
+
+export interface SiteOpsSourceEvent {
+  id: number
+  server_name: string
+  timestamp: string
+  event_type: string
+  severity: string
+  message: string
+  source: string
+  raw_line?: string
+  plain_english?: string
+  recommended_action?: string
+}
+
+export interface SiteOpsAnswer {
+  answer: string
+  model: string
+  source_events: SiteOpsSourceEvent[]
+}
+
+export interface SiteOpsHistoryItem {
+  id: number
+  question: string
+  answer: string
+  model: string
+  created_at: string
+}

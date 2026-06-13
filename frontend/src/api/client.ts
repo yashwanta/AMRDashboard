@@ -1,10 +1,42 @@
 import axios from 'axios'
 import type {
   Server, ServerRequest, LogEvent, DashboardStats,
-  TimelinePoint, SyncJob
+  TimelinePoint, SyncJob, IncidentSummary, ActionRun, ActionRunRequest, LoginResponse,
+  SiteOpsAnswer, SiteOpsHistoryItem, AppUser, AppUserRequest
 } from '../types'
 
 const api = axios.create({ baseURL: '/api' })
+
+api.interceptors.request.use(config => {
+  const token = sessionStorage.getItem('siteops_token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+api.interceptors.response.use(
+  response => response,
+  error => {
+    if (error.response?.status === 401) {
+      sessionStorage.removeItem('siteops_token')
+      sessionStorage.removeItem('siteops_user')
+      sessionStorage.removeItem('siteops_role')
+      localStorage.removeItem('robowatch_token')
+      localStorage.removeItem('robowatch_user')
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login'
+      }
+    }
+    return Promise.reject(error)
+  }
+)
+
+// Auth
+export const login = (username: string, password: string) =>
+  api.post<LoginResponse>('/auth/login', { username, password }).then(r => r.data)
+
+export const getMe = () => api.get<{ username: string; role: string }>('/auth/me').then(r => r.data)
 
 // Servers
 export const getServers = () => api.get<Server[]>('/servers').then(r => r.data)
@@ -20,8 +52,11 @@ export const testConnection = (data: ServerRequest) =>
 export interface LogFilters {
   server_id?: number
   event_type?: string
+  event_types?: string
   severity?: string
   source?: string
+  proxmox_host?: string
+  vmid?: string
   q?: string
   from?: string
   to?: string
@@ -43,3 +78,32 @@ export const getSyncHistory = () => api.get<SyncJob[]>('/sync-history').then(r =
 export const getServerStats = () => api.get('/server-stats').then(r => r.data)
 
 export const deepSync = (id: number, since: string) => api.post(`/servers/${id}/deep-sync?since=${encodeURIComponent(since)}`).then(r => r.data)
+
+export interface IncidentSummaryParams {
+  server_id: number
+  from?: string
+  to?: string
+}
+
+export const getIncidentSummary = (params: IncidentSummaryParams) =>
+  api.get<IncidentSummary>('/incidents/summary', { params }).then(r => r.data)
+
+// Remote actions
+export const runAction = (data: ActionRunRequest) =>
+  api.post<ActionRun>('/actions/run', data).then(r => r.data)
+
+export const getActionHistory = () =>
+  api.get<ActionRun[]>('/actions/history').then(r => r.data)
+
+// Ask SiteOps
+export const askSiteOps = (question: string) =>
+  api.post<SiteOpsAnswer>('/rag/query', { question }).then(r => r.data)
+
+export const getSiteOpsHistory = () =>
+  api.get<SiteOpsHistoryItem[]>('/rag/history').then(r => r.data)
+
+// Setup / users
+export const getUsers = () => api.get<AppUser[]>('/users').then(r => r.data)
+export const createUser = (data: AppUserRequest) => api.post<AppUser>('/users', data).then(r => r.data)
+export const updateUser = (id: number, data: AppUserRequest) => api.put<AppUser>(`/users/${id}`, data).then(r => r.data)
+export const deleteUser = (id: number) => api.delete(`/users/${id}`)

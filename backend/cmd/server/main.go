@@ -51,7 +51,7 @@ func main() {
 	defer sched.Stop()
 
 	// HTTP server
-	router := api.NewRouter(pool, cfg.EncryptionKey)
+	router := api.NewRouter(pool, cfg)
 	srv := &http.Server{
 		Addr:    ":" + cfg.ServerPort,
 		Handler: router,
