@@ -56,6 +56,72 @@
 - Generated sudoers model for target bootstrap:
   `robowatch ALL=(root) NOPASSWD: /bin/sh, /usr/bin/sh`
 
+## OpsForge SSH Key Setup
+
+Goal: RoboWatch/OpsForge runs from the Windows laptop and connects to a Linux target such as `USSHBUBUSTR250001` (`10.205.22.17`).
+
+Key rule:
+
+- Private key stays on Windows/RoboWatch.
+- Public key goes on the Linux server.
+
+Windows key files:
+
+- Private key: `C:\Users\Yashwanta.Thakur\.ssh\ansible_patch_key`
+- Public key: `C:\Users\Yashwanta.Thakur\.ssh\ansible_patch_key.pub`
+
+The private key starts with:
+
+```text
+-----BEGIN OPENSSH PRIVATE KEY-----
+```
+
+The public key starts with:
+
+```text
+ssh-ed25519
+```
+
+Target-side setup:
+
+1. Open `C:\Users\Yashwanta.Thakur\.ssh\ansible_patch_key.pub` on Windows and copy the full one-line public key.
+2. Log in to the Linux target as a sudo/root user.
+3. Run the following on the Linux target, replacing `PASTE_PUBLIC_KEY_HERE` with the full public key:
+
+```bash
+sudo useradd -m -s /bin/bash robowatch 2>/dev/null || true
+sudo install -d -m 700 -o robowatch -g robowatch /home/robowatch/.ssh
+echo 'PASTE_PUBLIC_KEY_HERE' | sudo tee /home/robowatch/.ssh/authorized_keys >/dev/null
+sudo chown robowatch:robowatch /home/robowatch/.ssh/authorized_keys
+sudo chmod 600 /home/robowatch/.ssh/authorized_keys
+```
+
+4. Allow only the approved RoboWatch shell actions:
+
+```bash
+echo 'robowatch ALL=(root) NOPASSWD: /bin/sh, /usr/bin/sh' | sudo tee /etc/sudoers.d/robowatch-robowatch >/dev/null
+sudo chmod 440 /etc/sudoers.d/robowatch-robowatch
+sudo visudo -cf /etc/sudoers.d/robowatch-robowatch
+```
+
+RoboWatch server record setup:
+
+1. Open `C:\Users\Yashwanta.Thakur\.ssh\ansible_patch_key` on Windows.
+2. Copy the full private key, including the `BEGIN OPENSSH PRIVATE KEY` and `END OPENSSH PRIVATE KEY` lines.
+3. In RoboWatch, go to `Servers`, edit the target server, and set:
+   - Username: `robowatch`
+   - Auth type: `Private Key`
+   - Private key: paste the full private key from Windows.
+4. Save, then go to `OpsForge Automation` and run `Check privilege access`.
+
+Expected success:
+
+```text
+Privilege check: PASS. Passwordless sudo is available for approved RoboWatch shell actions; patch and reboot actions can run.
+```
+
+If the Windows key is regenerated or overwritten, rerun the target-side public key setup with the new `.pub` key.
+
 ## Known Verified OOM Case
 
 - Timestamp: `2026-06-09T03:08:19Z`
