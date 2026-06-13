@@ -13,6 +13,8 @@
 - Stats endpoint through frontend proxy: `http://127.0.0.1:3000/api/stats`
 - Local development login: `admin` / `admin`
 - Login is controlled by `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `SESSION_SECRET`.
+- Keep local access simple unless the user explicitly asks again: use `localhost` / `127.0.0.1`, not a LAN forwarding IP.
+- After the last reboot recovery, the app was restored by starting containers in order: Postgres, backend, then frontend.
 
 ## Running Containers
 
@@ -21,6 +23,7 @@
 - `amrdashboard_postgres_1` uses volume `amrdashboard_pgdata` and should stay on the internal `amrdashboard_default` network.
 - If the backend is recreated, restart `amrdashboard_frontend_1` because Nginx can cache the old backend container IP.
 - There may also be an unrelated `postgres-db` container on host port `5432`; do not use it for RoboWatch data.
+- On reboot, if `127.0.0.1:3000` is down, check `podman ps -a`. Start `amrdashboard_postgres_1` first, wait for it, then start `amrdashboard_backend_1`, then `amrdashboard_frontend_1`.
 
 ## Recent Features
 
@@ -37,6 +40,21 @@
 - OpsForge does not collect or pipe sudo passwords. Privileged actions require root or passwordless sudo on the target server.
 - Automation runs are audited in `action_runs`.
 - Linux Docker installer supports Ubuntu/Debian and AlmaLinux/RHEL-family systems.
+- Latest OpsForge privilege fix: backend now checks passwordless sudo using `sudo -n /bin/sh -c ...`, matching the generated sudoers rule for `/bin/sh` and `/usr/bin/sh`.
+- Latest pushed commit for that fix: `66a7ac1 Fix OpsForge privilege check sudo command`.
+
+## Current Server State
+
+- API verified 8 saved servers after reboot recovery.
+- `USSHBUBUSTR250001` (`10.205.22.17`) uses username `robowatch`, private-key auth, and is tagged as `server`.
+- `USSHBUBUSTR250001` privilege check passed after the `/bin/sh` sudo fix:
+  `Privilege check: PASS. Passwordless sudo is available for approved RoboWatch shell actions; patch and reboot actions can run.`
+- Important SSH key rule for OpsForge:
+  - Private key from Windows app host goes in RoboWatch server record: `C:\Users\Yashwanta.Thakur\.ssh\ansible_patch_key`.
+  - Public key goes on the Linux target in `authorized_keys`: `C:\Users\Yashwanta.Thakur\.ssh\ansible_patch_key.pub`.
+  - If the key is regenerated or overwritten, rerun the target bootstrap with the new `.pub` key.
+- Generated sudoers model for target bootstrap:
+  `robowatch ALL=(root) NOPASSWD: /bin/sh, /usr/bin/sh`
 
 ## Known Verified OOM Case
 
