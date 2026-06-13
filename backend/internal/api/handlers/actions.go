@@ -290,7 +290,7 @@ func auditCommand(command string, req actionRunRequest) string {
 func rootRequiredScript(body string) string {
 	script := "if [ \"$(id -u)\" -ne 0 ]; then echo \"Run this script with sudo or as root\"; exit 1; fi\n" + body
 	quoted := shellQuote(script)
-	return "if [ \"$(id -u)\" -eq 0 ]; then sh -c " + quoted + "; else sudo -n sh -c " + quoted + "; fi"
+	return "if [ \"$(id -u)\" -eq 0 ]; then /bin/sh -c " + quoted + "; else sudo -n /bin/sh -c " + quoted + "; fi"
 }
 
 func rootRequiredCommand(command string) string {
@@ -377,7 +377,7 @@ func cve202643494GenericKernelCommand() string {
 }
 
 func privilegeCheckCommand() string {
-	return "if [ \"$(id -u)\" -eq 0 ]; then echo 'Privilege check: PASS. SSH user is root; patch and reboot actions can run.'; elif sudo -n true; then echo 'Privilege check: PASS. Passwordless sudo is available; patch and reboot actions can run.'; else echo 'Privilege check: FAIL. SSH user is not root and passwordless sudo is not configured. Patch, install, upgrade, remediation, and reboot actions will fail until you use root or configure NOPASSWD sudo on the target.'; exit 1; fi"
+	return "if [ \"$(id -u)\" -eq 0 ]; then echo 'Privilege check: PASS. SSH user is root; patch and reboot actions can run.'; elif sudo -n /bin/sh -c 'echo Privilege check shell allowed' >/dev/null 2>&1; then echo 'Privilege check: PASS. Passwordless sudo is available for approved RoboWatch shell actions; patch and reboot actions can run.'; else echo 'Privilege check: FAIL. SSH user is not root and passwordless sudo for /bin/sh is not configured. Patch, install, upgrade, remediation, and reboot actions will fail until you use root or configure NOPASSWD sudo on the target.'; exit 1; fi"
 }
 
 func aptListUpgradesCommand() string {

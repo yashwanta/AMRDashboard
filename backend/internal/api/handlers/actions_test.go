@@ -21,7 +21,7 @@ func TestBuildPackageInstallRequiresRootWithoutPasswordHandling(t *testing.T) {
 	requireContains(t, command, "Run this script with sudo or as root")
 	requireContains(t, command, "apt-get install -y")
 	requireContains(t, command, "curl")
-	requireContains(t, command, "sudo -n sh -c")
+	requireContains(t, command, "sudo -n /bin/sh -c")
 	requireNotContains(t, command, "sudo"+" -S")
 	requireNotContains(t, command, "printf '"+"%s\\n"+"'")
 }
@@ -37,7 +37,8 @@ func TestBuildPrivilegeCheckExplainsPatchReadiness(t *testing.T) {
 	requireContains(t, command, "Privilege check: PASS")
 	requireContains(t, command, "passwordless sudo")
 	requireContains(t, command, "Patch, install, upgrade, remediation, and reboot actions will fail")
-	requireContains(t, command, "sudo -n true")
+	requireContains(t, command, "sudo -n /bin/sh -c")
+	requireContains(t, command, "passwordless sudo for /bin/sh")
 	requireNotContains(t, command, "sudo"+" -S")
 }
 
