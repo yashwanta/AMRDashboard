@@ -36,7 +36,7 @@ Do not remove `amrdashboard_postgres_1` unless you intentionally want to remove 
 From PowerShell:
 
 ```powershell
-cd C:\DRISHTI-SiteOps
+cd C:\DRISHTI\DRISHTI-SiteOps
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-drishti-opsforge.ps1
 ```
 
@@ -51,7 +51,7 @@ The script starts the stack in the correct order:
 Run this once from PowerShell:
 
 ```powershell
-cd C:\DRISHTI-SiteOps
+cd C:\DRISHTI\DRISHTI-SiteOps
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-drishti-startup-shortcut.ps1
 ```
 
@@ -98,5 +98,5 @@ podman logs --tail 50 amrdashboard_frontend_1
 If only the database is running, start Drishti again:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\DRISHTI-SiteOps\scripts\start-drishti-opsforge.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\DRISHTI\DRISHTI-SiteOps\scripts\start-drishti-opsforge.ps1
 ```
