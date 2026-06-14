@@ -65,6 +65,7 @@ sudo systemctl status robowatch
 Step-by-step install guide: [INSTALL.md](INSTALL.md)  
 Copyable Ubuntu/AlmaLinux/Windows install package: [docs/INSTALL_PACKAGE.md](docs/INSTALL_PACKAGE.md)  
 OpsForge SSH key security wiki: [docs/OPSFORGE_SECURITY.md](docs/OPSFORGE_SECURITY.md)  
+Windows autostart guide: [docs/WINDOWS_AUTOSTART.md](docs/WINDOWS_AUTOSTART.md)  
 More deployment details: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 
 ---

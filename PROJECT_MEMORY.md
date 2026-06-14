@@ -24,6 +24,12 @@
 - If the backend is recreated, restart `amrdashboard_frontend_1` because Nginx can cache the old backend container IP.
 - There may also be an unrelated `postgres-db` container on host port `5432`; do not use it for RoboWatch data.
 - On reboot, if `127.0.0.1:3000` is down, check `podman ps -a`. Start `amrdashboard_postgres_1` first, wait for it, then start `amrdashboard_backend_1`, then `amrdashboard_frontend_1`.
+- Windows autostart scripts:
+  - `scripts/start-drishti-opsforge.ps1` starts Postgres, backend, then frontend and verifies the URLs.
+  - `scripts/register-drishti-autostart.ps1` registers a Windows Scheduled Task named `Drishti OpsForge Autostart`.
+  - `scripts/install-drishti-startup-shortcut.ps1` creates a Windows Startup folder launcher named `Start Drishti OpsForge.cmd`.
+- Windows autostart guide: `docs/WINDOWS_AUTOSTART.md`.
+- Current machine autostart uses the Startup folder launcher because Windows denied Scheduled Task registration from the Codex session.
 
 ## Recent Features
 
