@@ -1,7 +1,7 @@
 # Project Memory
 
 - GitHub repository: `yashwanta/AMRDashboard`
-- Local workspace: `C:\AMRDasboardCodex`
+- Local workspace: `C:\DRISHTI-SiteOps`
 - Active branch: `codex/log-dashboard-work`
 - Do not commit or push to `main`.
 - User preference: commit and push completed app changes to `codex/log-dashboard-work` unless they explicitly say not to.
@@ -149,5 +149,5 @@ If the Windows key is regenerated or overwritten, rerun the target-side public k
 ## Useful Verification
 
 - Frontend build: `npm run build` in `frontend`
-- Backend tests: set `GOCACHE=C:\AMRDasboardCodex\.gocache`, then run `go test ./...` in `backend`
+- Backend tests: set `GOCACHE=C:\DRISHTI-SiteOps\.gocache`, then run `go test ./...` in `backend`
 - Remove `.gocache` after tests.
