@@ -71,6 +71,23 @@ func PlainEnglishLog(ev models.LogEvent) string {
 		}
 		return strings.Join(parts, " ") + "."
 	}
+	if ev.EventType == "warlink_failure" {
+		details := parseWarLinkDetails(raw)
+		parts := []string{"WarLink could not complete a PLC communication"}
+		if details.Operation != "" {
+			parts = append(parts, "for "+details.Operation)
+		}
+		if details.Tag != "" {
+			parts = append(parts, "tag "+details.Tag)
+		}
+		if details.Group != "" {
+			parts = append(parts, "in group "+details.Group)
+		}
+		if details.Reason != "" {
+			parts = append(parts, "because "+details.Reason)
+		}
+		return strings.Join(parts, " ") + "."
+	}
 
 	if robotIP := extractRobotIP(raw); ev.EventType == "robot_offline" && robotIP != "" {
 		if strings.Contains(lower, "connection refused") {
@@ -132,6 +149,8 @@ func PlainEnglishLog(ev models.LogEvent) string {
 		return "SSH, sudo, login, or Proxmox access activity was recorded."
 	case "rds_map_update":
 		return "An RDS map update, upload, deploy, or push event was recorded."
+	case "warlink_failure":
+		return "WarLink reported a PLC communication failure."
 	case "service_failure":
 		return "A system service failed or entered a failed state."
 	case "ubuntu_log_gap":
@@ -172,6 +191,9 @@ func RecommendedAction(ev models.LogEvent) string {
 		}
 		return "Reference only. Confirm the user/IP was expected and verify robot behavior after the map update."
 	}
+	if ev.EventType == "warlink_failure" {
+		return "Check PLC reachability from Springfield Edge, WarLink or shingo-edge service health, and the affected PLC tag. If the same tag keeps failing, confirm the PLC path and network before restarting the service."
+	}
 
 	if ev.EventType == "robot_offline" {
 		if strings.Contains(lower, "timeout") {
@@ -195,6 +217,40 @@ func RecommendedAction(ev models.LogEvent) string {
 		return "Confirm whether this was expected administrative activity."
 	}
 	return ""
+}
+
+type warLinkDetails struct {
+	Operation string
+	Tag       string
+	Group     string
+	Reason    string
+}
+
+func parseWarLinkDetails(raw string) warLinkDetails {
+	details := warLinkDetails{}
+	if match := regexp.MustCompile(`(?i)WarLink\s+(GET|POST|PUT|PATCH|DELETE)\s+([^\s:]+)`).FindStringSubmatch(raw); match != nil {
+		details.Operation = strings.TrimSpace(match[1] + " " + match[2])
+	}
+	if match := regexp.MustCompile(`(?i)\btag=([A-Za-z0-9_.:-]+)`).FindStringSubmatch(raw); match != nil {
+		details.Tag = match[1]
+	}
+	if match := regexp.MustCompile(`(?i)\bgroup=([A-Za-z0-9_.:-]+)`).FindStringSubmatch(raw); match != nil {
+		details.Group = match[1]
+	}
+	lower := strings.ToLower(raw)
+	switch {
+	case strings.Contains(lower, "not connected"):
+		details.Reason = "the PLC connection was not connected"
+	case strings.Contains(lower, "returned 500"):
+		details.Reason = "WarLink returned HTTP 500"
+	case strings.Contains(lower, "timeout"):
+		details.Reason = "the request timed out"
+	case strings.Contains(lower, "deadman"):
+		details.Reason = "the heartbeat/deadman signal was at risk"
+	case strings.Contains(lower, "sendunitdatatransaction"):
+		details.Reason = "the EtherNet/IP transaction failed"
+	}
+	return details
 }
 
 func parseProxmoxAccessDetails(raw string) *proxmoxAccessDetails {

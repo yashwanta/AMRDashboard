@@ -141,6 +141,25 @@ WHERE event_type='rds_map_update'
       OR COALESCE(raw_line, message) ILIKE '%RDS%'
   );
 
+UPDATE log_events
+SET event_type='warlink_failure',
+    severity=CASE
+        WHEN COALESCE(raw_line, message) ~* '(panic|segfault|core dumped|fatal)' THEN 'critical'
+        WHEN COALESCE(raw_line, message) ~* '(deadman|returned 500|returned 502|returned 503|returned 504|not connected|SendUnitDataTransaction|still failing|WriteTag)' THEN 'high'
+        ELSE 'medium'
+    END
+WHERE (
+    COALESCE(raw_line, message) ~* '(WarLink|SendUnitDataTransaction|WriteTag)'
+    AND COALESCE(raw_line, message) ~* '(fail|failed|failing|not connected|returned 4|returned 5|timeout|connection refused|deadman|panic|segfault|fatal|core dumped|error)'
+    AND NOT (source ILIKE '%proxmox_host_memory%' AND COALESCE(raw_line, message) ~* '(/usr/bin/kvm|qemu-server| -name )')
+);
+
+UPDATE log_events
+SET event_type='unknown', severity='low'
+WHERE event_type='warlink_failure'
+  AND source ILIKE '%proxmox_host_memory%'
+  AND COALESCE(raw_line, message) ~* '(/usr/bin/kvm|qemu-server| -name )';
+
 CREATE TABLE IF NOT EXISTS app_users (
     id            BIGSERIAL PRIMARY KEY,
     username      TEXT NOT NULL UNIQUE,

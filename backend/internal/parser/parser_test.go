@@ -92,6 +92,20 @@ func TestParseLineLogReviewCategories(t *testing.T) {
 			eventType: "rds_map_update",
 			severity:  "high",
 		},
+		{
+			name:      "warlink plc write failure",
+			line:      `2026-06-15T10:31:52-05:00 ITPI shingo-edge[2387]: outage_log.go:73: countgroup: heartbeat write to PLC Battery (deadman will trip if sustained) still failing for 1h8m36s (4111 attempts): WarLink POST Battery/write tag=Shingo_Alive returned 500: WriteTag: SendUnitDataTransaction: SendUnitDataTransaction: not connected`,
+			source:    "journald_amr",
+			eventType: "warlink_failure",
+			severity:  "high",
+		},
+		{
+			name:      "warlink application crash",
+			line:      `2026-06-15T10:32:00-05:00 ITPI shingo-edge[2387]: fatal panic in WarLink worker: core dumped`,
+			source:    "journald_warlink",
+			eventType: "warlink_failure",
+			severity:  "critical",
+		},
 	}
 
 	for _, tt := range tests {

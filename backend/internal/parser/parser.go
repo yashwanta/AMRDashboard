@@ -160,6 +160,9 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 	if severity, ok := classifyRDSMapUpdate(matchLine, source); ok {
 		return newEvent(serverID, ts, "rds_map_update", severity, line, source)
 	}
+	if severity, ok := classifyWarLinkFailure(matchLine, source); ok {
+		return newEvent(serverID, ts, "warlink_failure", severity, line, source)
+	}
 	if strings.HasPrefix(source, "proxmox") && isProxmoxAccessLog(matchLine) {
 		return newEvent(serverID, ts, "ssh_login_activity", "low", line, source)
 	}
@@ -183,6 +186,30 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 	}
 
 	return newEvent(serverID, ts, "unknown", "low", line, source)
+}
+
+func classifyWarLinkFailure(line, source string) (string, bool) {
+	source = strings.ToLower(source)
+	if strings.Contains(source, "proxmox_host_memory") && hasAny(line, "/usr/bin/kvm", "qemu-server", " -name ") {
+		return "", false
+	}
+	if !strings.Contains(line, "warlink") && !strings.Contains(line, "sendunitdatatransaction") && !strings.Contains(line, "writetag") {
+		return "", false
+	}
+	if hasAny(line, "panic", "segfault", "core dumped", "fatal") {
+		return "critical", true
+	}
+	if hasAny(line,
+		"returned 500", "returned 502", "returned 503", "returned 504",
+		"not connected", "sendunitdatatransaction", "deadman", "still failing",
+		"failed", "failing", "connection refused", "writetag",
+	) {
+		return "high", true
+	}
+	if hasAny(line, "returned 4", "returned 5", "error") || (strings.Contains(line, "timeout") && hasAny(line, "warlink", "writetag", "readmultiple")) {
+		return "medium", true
+	}
+	return "", false
 }
 
 func classifyRDSMapUpdate(line, source string) (string, bool) {

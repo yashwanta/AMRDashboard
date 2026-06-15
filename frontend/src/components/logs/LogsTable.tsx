@@ -47,6 +47,13 @@ interface RdsMapLog {
   map?: string
 }
 
+interface WarLinkLog {
+  operation?: string
+  tag?: string
+  group?: string
+  reason?: string
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 function parseRdsLog(msg: string): RdsLog | null {
@@ -136,6 +143,27 @@ function parseRdsMapLog(raw: string): RdsMapLog {
   }
 }
 
+function parseWarLinkLog(raw: string): WarLinkLog {
+  const lower = raw.toLowerCase()
+  const method = raw.match(/WarLink\s+(GET|POST|PUT|PATCH|DELETE)\s+([^\s:]+)/i)
+  return {
+    operation: method ? `${method[1]} ${method[2]}` : undefined,
+    tag: firstMatch(raw, [/\btag=([A-Za-z0-9_.:-]+)/i]),
+    group: firstMatch(raw, [/\bgroup=([A-Za-z0-9_.:-]+)/i]),
+    reason: lower.includes('not connected')
+      ? 'PLC connection not connected'
+      : lower.includes('returned 500')
+        ? 'WarLink returned HTTP 500'
+        : lower.includes('timeout')
+          ? 'Request timed out'
+          : lower.includes('deadman')
+            ? 'Heartbeat/deadman at risk'
+            : lower.includes('sendunitdatatransaction')
+              ? 'EtherNet/IP transaction failed'
+              : undefined,
+  }
+}
+
 function firstMatch(raw: string, patterns: RegExp[]): string | undefined {
   for (const pattern of patterns) {
     const match = raw.match(pattern)
@@ -195,6 +223,15 @@ function explainMessage(ev: LogEvent): string {
     if (map.map) parts.push(`for map ${map.map}`)
     return `${parts.join(' ')}.`
   }
+  if (ev.event_type === 'warlink_failure') {
+    const warlink = parseWarLinkLog(raw)
+    const parts = ['WarLink could not complete a PLC communication']
+    if (warlink.operation) parts.push(`for ${warlink.operation}`)
+    if (warlink.tag) parts.push(`tag ${warlink.tag}`)
+    if (warlink.group) parts.push(`in group ${warlink.group}`)
+    if (warlink.reason) parts.push(`because ${warlink.reason}`)
+    return `${parts.join(' ')}.`
+  }
   const rds = parseRdsLog(raw)
   const oom = ev.oom_analysis
   if (ev.event_type === 'robot_offline' && rds?.serverIP) {
@@ -244,6 +281,9 @@ function suggestAction(ev: LogEvent): string | null {
     if (map.status === 'failed' || map.status === 'broken') return 'Review the RDS map update result, confirm which user/IP pushed it, and verify robots can load or use the updated map.'
     return 'Reference only: confirm the user/IP was expected and verify robot behavior after the map update.'
   }
+  if (ev.event_type === 'warlink_failure') {
+    return 'Check PLC reachability from Springfield Edge, WarLink or shingo-edge service health, and the affected PLC tag. If repeated, confirm the PLC path and network before restarting the service.'
+  }
   const message = raw.toLowerCase()
   if (ev.event_type === 'robot_offline') {
     if (message.includes('timeout')) return 'Check robot power and network reachability from the server.'
@@ -289,6 +329,15 @@ function friendlySummary(ev: LogEvent): string {
       map.ip ? `from ${map.ip}` : null,
       map.mac ? `MAC ${map.mac}` : null,
       map.map ? `(${map.map})` : null,
+    ].filter(Boolean).join(' ')
+  }
+  if (ev.event_type === 'warlink_failure') {
+    const warlink = parseWarLinkLog(raw)
+    return [
+      'WarLink PLC failure',
+      warlink.operation ? `- ${warlink.operation}` : null,
+      warlink.tag ? `tag ${warlink.tag}` : null,
+      warlink.reason ? `(${warlink.reason})` : null,
     ].filter(Boolean).join(' ')
   }
   const rds = parseRdsLog(raw)
@@ -472,6 +521,25 @@ export default function LogsTable({ events, loading }: Props) {
                               { label: 'Source IP', value: map.ip ?? '-' },
                               { label: 'MAC', value: map.mac ?? '-' },
                               { label: 'Map / Scene', value: map.map ?? '-' },
+                            ].map(field => (
+                              <div key={field.label} className="bg-gray-900 border border-gray-700 rounded-lg p-3">
+                                <div className="text-xs text-gray-500 mb-1">{field.label}</div>
+                                <div className="text-sm font-semibold text-gray-200 font-mono truncate">{field.value}</div>
+                              </div>
+                            ))
+                          })()}
+                        </div>
+                      )}
+
+                      {ev.event_type === 'warlink_failure' && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {(() => {
+                            const warlink = parseWarLinkLog(raw)
+                            return [
+                              { label: 'Operation', value: warlink.operation ?? '-' },
+                              { label: 'PLC tag', value: warlink.tag ?? '-' },
+                              { label: 'Group', value: warlink.group ?? '-' },
+                              { label: 'Reason', value: warlink.reason ?? 'WarLink failure' },
                             ].map(field => (
                               <div key={field.label} className="bg-gray-900 border border-gray-700 rounded-lg p-3">
                                 <div className="text-xs text-gray-500 mb-1">{field.label}</div>

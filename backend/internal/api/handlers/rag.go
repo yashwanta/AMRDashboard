@@ -184,6 +184,11 @@ func (h *RAGHandler) searchEvents(r *http.Request, question string) ([]ragSource
 		}
 		where += " AND (" + strings.Join(clauses, " OR ") + ")"
 	}
+	if isWarLinkQuestion(question) {
+		where += " AND (le.event_type='warlink_failure' OR le.message ILIKE $" + strconv.Itoa(argN) + " OR le.raw_line ILIKE $" + strconv.Itoa(argN) + " OR le.message ILIKE $" + strconv.Itoa(argN+1) + " OR le.raw_line ILIKE $" + strconv.Itoa(argN+1) + " OR le.message ILIKE $" + strconv.Itoa(argN+2) + " OR le.raw_line ILIKE $" + strconv.Itoa(argN+2) + ")"
+		args = append(args, "%WarLink%", "%SendUnitDataTransaction%", "%WriteTag%")
+		argN += 3
+	}
 
 	rows, err := h.db.Query(r.Context(), `
 		SELECT le.id, s.name, le.timestamp, le.event_type, le.severity, le.message, le.source, COALESCE(le.raw_line,'')
@@ -225,6 +230,17 @@ func (h *RAGHandler) searchEvents(r *http.Request, question string) ([]ragSource
 		events = append(events, ev)
 	}
 	return events, nil
+}
+
+func isWarLinkQuestion(question string) bool {
+	q := strings.ToLower(question)
+	return strings.Contains(q, "warlink") ||
+		strings.Contains(q, "plc") ||
+		strings.Contains(q, "shingo-edge") ||
+		strings.Contains(q, "deadman") ||
+		strings.Contains(q, "writetag") ||
+		strings.Contains(q, "sendunitdatatransaction") ||
+		strings.Contains(q, "crosswalk")
 }
 
 func rankEventsForQuestion(question string, events []ragSourceEvent) []ragSourceEvent {
@@ -285,6 +301,14 @@ func eventQuestionRank(question string, ev ragSourceEvent) int {
 			return 0
 		}
 		if strings.Contains(raw, "map") || strings.Contains(raw, "smap") || strings.Contains(raw, "scene") {
+			return 1
+		}
+		return 20
+	case isWarLinkQuestion(q):
+		if ev.EventType == "warlink_failure" {
+			return 0
+		}
+		if strings.Contains(raw, "warlink") || strings.Contains(raw, "plc") || strings.Contains(raw, "shingo-edge") || strings.Contains(raw, "deadman") || strings.Contains(raw, "writetag") {
 			return 1
 		}
 		return 20
@@ -482,6 +506,9 @@ func buildSiteOpsAnswer(question string, events []ragSourceEvent) string {
 }
 
 func buildRuleBasedSiteOpsAnswer(question string, events []ragSourceEvent) string {
+	if answer := buildWarLinkAnswer(question, events); answer != "" {
+		return answer
+	}
 	if answer := buildRobotDisconnectAnswer(question, events); answer != "" {
 		return answer
 	}
@@ -498,6 +525,56 @@ func buildRuleBasedSiteOpsAnswer(question string, events []ragSourceEvent) strin
 		return answer
 	}
 	return ""
+}
+
+func buildWarLinkAnswer(question string, events []ragSourceEvent) string {
+	if !isWarLinkQuestion(question) {
+		return ""
+	}
+	warlinkEvents := filterRAGEvents(events, func(ev ragSourceEvent) bool {
+		raw := strings.ToLower(ev.RawLine + " " + ev.Message + " " + ev.EventType)
+		return ev.EventType == "warlink_failure" ||
+			strings.Contains(raw, "warlink") ||
+			strings.Contains(raw, "sendunitdatatransaction") ||
+			strings.Contains(raw, "writetag")
+	})
+	if len(warlinkEvents) == 0 {
+		return ""
+	}
+	first := warlinkEvents[0]
+	tag := firstRegexMatch(warlinkEvents, regexp.MustCompile(`(?i)\btag=([A-Za-z0-9_.:-]+)`))
+	operation := firstRegexMatch(warlinkEvents, regexp.MustCompile(`(?i)WarLink\s+((?:GET|POST|PUT|PATCH|DELETE)\s+[^\s:]+)`))
+	reasons := []string{}
+	if anyRAGEventContains(warlinkEvents, "not connected") {
+		reasons = append(reasons, "the PLC connection was not connected")
+	}
+	if anyRAGEventContains(warlinkEvents, "returned 500") {
+		reasons = append(reasons, "WarLink returned HTTP 500")
+	}
+	if anyRAGEventContains(warlinkEvents, "deadman") {
+		reasons = append(reasons, "the heartbeat/deadman signal was at risk")
+	}
+	if anyRAGEventContains(warlinkEvents, "timeout") {
+		reasons = append(reasons, "the request timed out")
+	}
+	if len(reasons) == 0 {
+		reasons = append(reasons, "WarLink logged PLC communication failures")
+	}
+	target := "WarLink"
+	if operation != "" {
+		target += " " + operation
+	}
+	if tag != "" {
+		target += " tag " + tag
+	}
+	return fmt.Sprintf(
+		"%s is failing on %s because %s. The latest matching evidence is from %s on %s. Recommended checks: PLC reachability from Springfield Edge, shingo-edge/WarLink service status, network path to the PLC, and whether the affected tag is expected. Raw logs are kept below for reference.",
+		target,
+		first.ServerName,
+		joinHuman(reasons),
+		first.Source,
+		first.Timestamp.Format("Jan 2, 2006 3:04 PM"),
+	)
 }
 
 func buildRobotDisconnectAnswer(question string, events []ragSourceEvent) string {

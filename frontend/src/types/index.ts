@@ -60,6 +60,7 @@ export interface LogEvent {
     | 'network_dhcp_failure'
     | 'ssh_login_activity'
     | 'rds_map_update'
+    | 'warlink_failure'
     | 'service_failure'
     | 'ubuntu_log_gap'
     | 'power_network_event'

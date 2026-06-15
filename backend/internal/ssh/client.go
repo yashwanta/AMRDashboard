@@ -105,10 +105,15 @@ func (c *Client) FetchLogs(since time.Time, appLogPaths string) (map[string]stri
 	// -- journald: AMR / RDS / Roboshop connection + crash events
 	amrGrep := "Roboshop|rds|AMR|10[.]216[.]35|SocketState|ConnectedState|UnconnectedState" +
 		"|ClosingState|remote host closed|Connect timeout|Add device failed|Not connected" +
-		"|slotTcpError|setLastError|timeout|disconnect|connected|map|smap|scene|upload|deploy|push|19204|19205|19206|19207"
+		"|slotTcpError|setLastError|timeout|disconnect|connected|map|smap|scene|upload|deploy|push|19204|19205|19206|19207" +
+		"|WarLink|shingo-edge|PLC|deadman|WriteTag|SendUnitDataTransaction|countgroup|Crosswalk"
 	run("journald_amr", fmt.Sprintf(
 		"journalctl --since %q --no-pager -o short-iso 2>/dev/null | grep -Ei %q || true",
 		sinceStr, amrGrep))
+
+	run("journald_warlink", fmt.Sprintf(
+		"journalctl -u shingo-edge --since %q --no-pager -o short-iso 2>/dev/null || true",
+		sinceStr))
 
 	// -- journald -k: kernel OOM / panic / disk / hardware
 	kernGrep := "oom|out of memory|killed process|segfault|core dumped|error|fail|panic" +
@@ -149,6 +154,13 @@ func (c *Client) FetchLogs(since time.Time, appLogPaths string) (map[string]stri
 		"find /opt/data/rds /opt/data/rdscore /opt/data/robod -type f"+
 			" \\( -iname '*.log' -o -iname '*.out' -o -iname '*.err' \\) -mmin -1440 -print0 2>/dev/null"+
 			" | xargs -0 grep -HinEi "+fmt.Sprintf("%q", rdsGrep)+" 2>/dev/null || true")
+
+	warlinkGrep := "WarLink|shingo-edge|PLC|deadman|WriteTag|SendUnitDataTransaction|countgroup|Crosswalk|panic|fatal|segfault|core dumped|failed|error|timeout|not connected"
+	run("warlink_file_logs", fmt.Sprintf(
+		"find /opt /var/log /home/pi -type f"+
+			" \\( -iname '*warlink*.log*' -o -iname '*shingo-edge*.log*' -o -iname '*edge*.log*' \\) -mmin -10080 -print0 2>/dev/null"+
+			" | xargs -0 zgrep -HinEi %q 2>/dev/null | tail -n 8000 || true",
+		warlinkGrep))
 
 	// -- RDS / Roboshop API, access, and audit logs. These are the most likely
 	// places to include who pushed a map and the client IP used for the upload.

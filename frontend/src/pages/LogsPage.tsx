@@ -26,6 +26,7 @@ const QUICK_FILTERS = [
   { label: 'HA', event_type: 'ha_action', q: 'ha-manager pve-ha' },
   { label: 'Robot Offline', event_type: 'robot_offline', q: 'UnconnectedState disconnect' },
   { label: 'RDS Map Update', event_type: 'rds_map_update', q: 'map smap scene push upload update deploy' },
+  { label: 'WarLink', event_type: 'warlink_failure', q: 'WarLink SendUnitDataTransaction WriteTag not connected returned 500' },
   { label: 'App Crash', event_type: 'crash', q: 'segfault fatal core dumped' },
   { label: 'SSH Login', event_type: 'ssh_login_activity', q: 'sshd accepted failed password' },
   { label: 'Network Failure', event_type: 'network_dhcp_failure', q: 'dhcp link down network unreachable' },
