@@ -125,6 +125,9 @@ export default function ServersPage() {
                         <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-950/50 text-blue-200 border border-blue-800">
                           Server
                         </span>
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-950/50 text-slate-200 border border-slate-700">
+                          Infrastructure / app host
+                        </span>
                       </div>
                       <p className="text-sm text-gray-400 mt-1 font-mono">
                         {s.username}@{s.host}:{s.port}

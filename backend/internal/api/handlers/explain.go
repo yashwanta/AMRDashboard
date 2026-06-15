@@ -83,6 +83,12 @@ func PlainEnglishLog(ev models.LogEvent) string {
 		if details.Group != "" {
 			parts = append(parts, "in group "+details.Group)
 		}
+		if details.Duration != "" {
+			parts = append(parts, "after failing for "+details.Duration)
+		}
+		if details.Attempts != "" {
+			parts = append(parts, "across "+details.Attempts+" attempts")
+		}
 		if details.Reason != "" {
 			parts = append(parts, "because "+details.Reason)
 		}
@@ -192,7 +198,7 @@ func RecommendedAction(ev models.LogEvent) string {
 		return "Reference only. Confirm the user/IP was expected and verify robot behavior after the map update."
 	}
 	if ev.EventType == "warlink_failure" {
-		return "Check PLC reachability from Springfield Edge, WarLink or shingo-edge service health, and the affected PLC tag. If the same tag keeps failing, confirm the PLC path and network before restarting the service."
+		return "Most likely reason: WarLink does not currently have an established PLC connection. Check PLC power/network reachability from Springfield Edge, the shingo-edge/WarLink service connection state, and the affected PLC route/tag before restarting the service."
 	}
 
 	if ev.EventType == "robot_offline" {
@@ -224,6 +230,8 @@ type warLinkDetails struct {
 	Tag       string
 	Group     string
 	Reason    string
+	Duration  string
+	Attempts  string
 }
 
 func parseWarLinkDetails(raw string) warLinkDetails {
@@ -237,12 +245,18 @@ func parseWarLinkDetails(raw string) warLinkDetails {
 	if match := regexp.MustCompile(`(?i)\bgroup=([A-Za-z0-9_.:-]+)`).FindStringSubmatch(raw); match != nil {
 		details.Group = match[1]
 	}
+	if match := regexp.MustCompile(`(?i)still failing for\s+([^\s]+)`).FindStringSubmatch(raw); match != nil {
+		details.Duration = match[1]
+	}
+	if match := regexp.MustCompile(`(?i)\((\d+)\s+attempts\)`).FindStringSubmatch(raw); match != nil {
+		details.Attempts = match[1]
+	}
 	lower := strings.ToLower(raw)
 	switch {
 	case strings.Contains(lower, "not connected"):
-		details.Reason = "the PLC connection was not connected"
+		details.Reason = "the PLC connection was not established from WarLink"
 	case strings.Contains(lower, "returned 500"):
-		details.Reason = "WarLink returned HTTP 500"
+		details.Reason = "WarLink returned HTTP 500 while talking to the PLC"
 	case strings.Contains(lower, "timeout"):
 		details.Reason = "the request timed out"
 	case strings.Contains(lower, "deadman"):

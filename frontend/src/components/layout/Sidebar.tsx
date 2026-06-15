@@ -11,7 +11,7 @@ const publicNav = [
 
 const adminNav = [
   { to: '/servers',  label: 'Servers',    Icon: Server },
-  { to: '/endpoints', label: 'Endpoints', Icon: ServerCog },
+  { to: '/endpoints', label: 'Workstations', Icon: ServerCog },
   { to: '/sync',     label: 'Sync Jobs',  Icon: RefreshCw },
 ]
 

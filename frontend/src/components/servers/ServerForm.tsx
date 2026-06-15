@@ -90,8 +90,8 @@ export default function ServerForm({ initial, defaultAssetType = 'server', submi
         <div className="col-span-2">
           <label className={labelCls}>Folder / asset type</label>
           <select className={inputCls} value={form.asset_type ?? 'server'} onChange={e => set('asset_type', e.target.value)}>
-            <option value="server">Server: PVE, Proxmox, Fleet Manager</option>
-            <option value="endpoint">Endpoint computer / workstation</option>
+            <option value="server">Server - infrastructure / app host</option>
+            <option value="endpoint">Workstation - endpoint computer</option>
           </select>
         </div>
 

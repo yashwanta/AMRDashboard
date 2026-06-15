@@ -23,8 +23,8 @@ export default function EndpointsPage() {
     <div className="flex flex-col h-full bg-gray-900 text-gray-100">
       <div className="flex items-center justify-between px-6 py-4 bg-gray-900 border-b border-gray-700">
         <div>
-          <h1 className="text-base font-semibold text-white">Endpoints</h1>
-          <p className="text-xs text-gray-400 mt-0.5">{endpoints.length} endpoint computer{endpoints.length !== 1 ? 's' : ''} / workstation{endpoints.length !== 1 ? 's' : ''} for log sync and OpsForge actions</p>
+          <h1 className="text-base font-semibold text-white">Workstations</h1>
+          <p className="text-xs text-gray-400 mt-0.5">{endpoints.length} workstation endpoint{endpoints.length !== 1 ? 's' : ''} for log sync and OpsForge actions</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -34,10 +34,10 @@ export default function EndpointsPage() {
             title="Sync all endpoints in this tab"
           >
             <RefreshCw size={14} className={syncAllM.isPending ? 'animate-spin' : ''} />
-            {syncAllM.isPending ? 'Syncing endpoints...' : 'Sync All Endpoints'}
+            {syncAllM.isPending ? 'Syncing workstations...' : 'Sync All Workstations'}
           </button>
           <button onClick={() => { setEditing(null); setModal('add') }} className="btn-primary flex items-center gap-2">
-            <Plus size={14} /> Add Endpoint
+            <Plus size={14} /> Add Workstation
           </button>
         </div>
       </div>
@@ -60,8 +60,10 @@ export default function EndpointsPage() {
                       Last synced: {server.last_sync_at ? format(parseISO(server.last_sync_at), 'MMM d, h:mm a') : 'Never'}
                     </p>
                     <div className="flex flex-wrap gap-2 mt-3">
+                      <span className="text-xs px-2 py-0.5 rounded-md border border-cyan-800 bg-cyan-950/40 text-cyan-200">Workstation</span>
+                      <span className="text-xs px-2 py-0.5 rounded-md border border-gray-700 bg-gray-900 text-gray-300">Endpoint computer</span>
+                      <span className="text-xs px-2 py-0.5 rounded-md border border-blue-800 bg-blue-950/40 text-blue-200">Log sync target</span>
                       <span className="text-xs px-2 py-0.5 rounded-md border border-gray-700 bg-gray-900 text-gray-300">OpsForge target</span>
-                      <span className="text-xs px-2 py-0.5 rounded-md border border-cyan-800 bg-cyan-950/40 text-cyan-200">Endpoint computer</span>
                       {server.proxmox_host && <span className="text-xs px-2 py-0.5 rounded-md border border-purple-800 bg-purple-950/40 text-purple-200">PVE mapped</span>}
                       {server.app_log_paths && <span className="text-xs px-2 py-0.5 rounded-md border border-blue-800 bg-blue-950/40 text-blue-200">App logs</span>}
                     </div>
@@ -91,7 +93,7 @@ export default function EndpointsPage() {
         {endpoints.length === 0 && (
           <div className="text-center text-gray-500 py-16">
             <p className="text-lg text-gray-400 font-medium">No endpoints yet</p>
-            <p className="text-sm mt-1">Add an endpoint to sync workstation logs and use it as an OpsForge target.</p>
+            <p className="text-sm mt-1">Add a workstation endpoint to sync logs and use it as an OpsForge target.</p>
           </div>
         )}
       </div>
@@ -100,14 +102,14 @@ export default function EndpointsPage() {
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
-              <h2 className="font-semibold text-white">{modal === 'add' ? 'Add Endpoint' : 'Edit Endpoint'}</h2>
+              <h2 className="font-semibold text-white">{modal === 'add' ? 'Add Workstation' : 'Edit Workstation'}</h2>
               <button onClick={() => setModal(null)} className="text-gray-400 hover:text-white text-xl leading-none">&times;</button>
             </div>
             <div className="p-6">
               <ServerForm
                 initial={editing ?? undefined}
                 defaultAssetType="endpoint"
-                submitLabel={modal === 'add' ? 'Add Endpoint' : 'Update Endpoint'}
+                submitLabel={modal === 'add' ? 'Add Workstation' : 'Update Workstation'}
                 onSubmit={async data => {
                   if (modal === 'add') await createM.mutateAsync(data)
                   else if (editing) await updateM.mutateAsync({ id: editing.id, data })

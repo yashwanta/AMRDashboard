@@ -52,6 +52,8 @@ interface WarLinkLog {
   tag?: string
   group?: string
   reason?: string
+  duration?: string
+  attempts?: string
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -150,10 +152,12 @@ function parseWarLinkLog(raw: string): WarLinkLog {
     operation: method ? `${method[1]} ${method[2]}` : undefined,
     tag: firstMatch(raw, [/\btag=([A-Za-z0-9_.:-]+)/i]),
     group: firstMatch(raw, [/\bgroup=([A-Za-z0-9_.:-]+)/i]),
+    duration: firstMatch(raw, [/still failing for\s+([^\s]+)/i]),
+    attempts: firstMatch(raw, [/\((\d+)\s+attempts\)/i]),
     reason: lower.includes('not connected')
-      ? 'PLC connection not connected'
+      ? 'PLC connection was not established from WarLink'
       : lower.includes('returned 500')
-        ? 'WarLink returned HTTP 500'
+        ? 'WarLink returned HTTP 500 while talking to the PLC'
         : lower.includes('timeout')
           ? 'Request timed out'
           : lower.includes('deadman')
@@ -229,6 +233,8 @@ function explainMessage(ev: LogEvent): string {
     if (warlink.operation) parts.push(`for ${warlink.operation}`)
     if (warlink.tag) parts.push(`tag ${warlink.tag}`)
     if (warlink.group) parts.push(`in group ${warlink.group}`)
+    if (warlink.duration) parts.push(`after failing for ${warlink.duration}`)
+    if (warlink.attempts) parts.push(`across ${warlink.attempts} attempts`)
     if (warlink.reason) parts.push(`because ${warlink.reason}`)
     return `${parts.join(' ')}.`
   }
@@ -282,7 +288,7 @@ function suggestAction(ev: LogEvent): string | null {
     return 'Reference only: confirm the user/IP was expected and verify robot behavior after the map update.'
   }
   if (ev.event_type === 'warlink_failure') {
-    return 'Check PLC reachability from Springfield Edge, WarLink or shingo-edge service health, and the affected PLC tag. If repeated, confirm the PLC path and network before restarting the service.'
+    return 'Most likely reason: WarLink does not currently have an established PLC connection. Check PLC power/network reachability from Springfield Edge, shingo-edge/WarLink service connection state, and the affected PLC route/tag before restarting the service.'
   }
   const message = raw.toLowerCase()
   if (ev.event_type === 'robot_offline') {
@@ -337,6 +343,7 @@ function friendlySummary(ev: LogEvent): string {
       'WarLink PLC failure',
       warlink.operation ? `- ${warlink.operation}` : null,
       warlink.tag ? `tag ${warlink.tag}` : null,
+      warlink.duration ? `${warlink.duration}` : null,
       warlink.reason ? `(${warlink.reason})` : null,
     ].filter(Boolean).join(' ')
   }
@@ -539,6 +546,8 @@ export default function LogsTable({ events, loading }: Props) {
                               { label: 'Operation', value: warlink.operation ?? '-' },
                               { label: 'PLC tag', value: warlink.tag ?? '-' },
                               { label: 'Group', value: warlink.group ?? '-' },
+                              { label: 'Duration', value: warlink.duration ?? '-' },
+                              { label: 'Attempts', value: warlink.attempts ?? '-' },
                               { label: 'Reason', value: warlink.reason ?? 'WarLink failure' },
                             ].map(field => (
                               <div key={field.label} className="bg-gray-900 border border-gray-700 rounded-lg p-3">
