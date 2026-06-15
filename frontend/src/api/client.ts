@@ -2,7 +2,7 @@ import axios from 'axios'
 import type {
   Server, ServerRequest, LogEvent, DashboardStats,
   TimelinePoint, SyncJob, IncidentSummary, ActionRun, ActionRunRequest, LoginResponse,
-  SiteOpsAnswer, SiteOpsHistoryItem, AppUser, AppUserRequest
+  SiteOpsAnswer, SiteOpsHistoryItem, SiteOpsSuggestion, AppUser, AppUserRequest
 } from '../types'
 
 const api = axios.create({ baseURL: '/api' })
@@ -102,6 +102,9 @@ export const askSiteOps = (question: string) =>
 
 export const getSiteOpsHistory = () =>
   api.get<SiteOpsHistoryItem[]>('/rag/history').then(r => r.data)
+
+export const getSiteOpsSuggestions = () =>
+  api.get<SiteOpsSuggestion[]>('/rag/suggestions').then(r => r.data)
 
 // Setup / users
 export const getUsers = () => api.get<AppUser[]>('/users').then(r => r.data)

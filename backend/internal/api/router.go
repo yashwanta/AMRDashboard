@@ -37,6 +37,7 @@ func NewRouter(db *pgxpool.Pool, cfg *config.Config) http.Handler {
 		r.Post("/sync/all", syncH.SyncAll)
 		r.Post("/rag/query", ragH.Query)
 		r.Get("/rag/history", ragH.History)
+		r.Get("/rag/suggestions", ragH.Suggestions)
 
 		r.Group(func(r chi.Router) {
 			r.Use(authH.Middleware)

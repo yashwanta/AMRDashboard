@@ -135,3 +135,26 @@ func TestRankEventsForQuestionPrioritizesRobotEvidence(t *testing.T) {
 		t.Fatalf("expected add-device failure second, got event ID %d", ranked[1].ID)
 	}
 }
+
+func TestBuildRAGSuggestionsUsesAvailableEventTypes(t *testing.T) {
+	suggestions := buildRAGSuggestions(map[string]int{
+		"warlink_failure":  42,
+		"vm_killed_by_oom": 8,
+		"rds_map_update":   3,
+	})
+	if len(suggestions) == 0 {
+		t.Fatal("expected suggestions")
+	}
+	if suggestions[0].EventType != "warlink_failure" {
+		t.Fatalf("expected WarLink suggestion first, got %q", suggestions[0].EventType)
+	}
+	foundOOM := false
+	for _, suggestion := range suggestions {
+		if suggestion.EventType == "vm_killed_by_oom" && strings.Contains(suggestion.Question, "OOM") {
+			foundOOM = true
+		}
+	}
+	if !foundOOM {
+		t.Fatalf("expected OOM suggestion in %+v", suggestions)
+	}
+}

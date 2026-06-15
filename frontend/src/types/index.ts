@@ -259,3 +259,11 @@ export interface SiteOpsHistoryItem {
   model: string
   created_at: string
 }
+
+export interface SiteOpsSuggestion {
+  question: string
+  category: string
+  description: string
+  event_type?: string
+  count?: number
+}

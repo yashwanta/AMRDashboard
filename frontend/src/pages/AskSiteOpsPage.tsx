@@ -2,14 +2,30 @@ import { FormEvent, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { Bot, Send, Search, ShieldCheck } from 'lucide-react'
-import { askSiteOps, getSiteOpsHistory } from '../api/client'
-import type { SiteOpsAnswer } from '../types'
+import { askSiteOps, getSiteOpsHistory, getSiteOpsSuggestions } from '../api/client'
+import type { SiteOpsAnswer, SiteOpsSuggestion } from '../types'
 
-const prompts = [
-  'Why did Springfield have OOM events?',
-  'Summarize critical Proxmox events this week',
-  'What robot disconnects happened recently?',
-  'Which servers need review before patching?',
+const fallbackPrompts: SiteOpsSuggestion[] = [
+  {
+    question: 'What is happening with WarLink on Springfield Edge?',
+    category: 'WarLink / PLC',
+    description: 'Explain PLC connection failures, affected tags, and repeated attempts.',
+  },
+  {
+    question: 'Which VM was killed by OOM and why?',
+    category: 'OOM / Memory',
+    description: 'Find the killed VM, memory culprit, and recommended fix.',
+  },
+  {
+    question: 'Who pushed an RDS map update and did it succeed?',
+    category: 'RDS Maps',
+    description: 'Review map push/upload result, user, source IP, and evidence.',
+  },
+  {
+    question: 'Which servers or workstations are missing patches?',
+    category: 'Patching',
+    description: 'Summarize patch inventory from OpsForge checks.',
+  },
 ]
 
 export default function AskSiteOpsPage() {
@@ -17,6 +33,7 @@ export default function AskSiteOpsPage() {
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState<SiteOpsAnswer | null>(null)
   const { data: history = [] } = useQuery({ queryKey: ['siteops-history'], queryFn: getSiteOpsHistory })
+  const { data: suggestions = fallbackPrompts } = useQuery({ queryKey: ['siteops-suggestions'], queryFn: getSiteOpsSuggestions })
 
   const mutation = useMutation({
     mutationFn: askSiteOps,
@@ -54,13 +71,20 @@ export default function AskSiteOpsPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
-              {prompts.map(prompt => (
+              {suggestions.map(prompt => (
                 <button
-                  key={prompt}
-                  onClick={() => askPrompt(prompt)}
-                  className="text-left text-xs text-gray-300 bg-gray-900 border border-gray-700 hover:border-blue-500 rounded-md px-3 py-2 transition-colors"
+                  key={prompt.question}
+                  onClick={() => askPrompt(prompt.question)}
+                  className="text-left bg-gray-900 border border-gray-700 hover:border-blue-500 rounded-md px-3 py-2 transition-colors"
                 >
-                  {prompt}
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-[11px] uppercase tracking-wide text-blue-300 font-semibold">{prompt.category}</span>
+                    {typeof prompt.count === 'number' && prompt.count > 0 && (
+                      <span className="text-[11px] text-gray-500">{prompt.count.toLocaleString()} events</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-gray-100 font-medium leading-5">{prompt.question}</div>
+                  <div className="text-[11px] text-gray-500 mt-1 leading-4">{prompt.description}</div>
                 </button>
               ))}
             </div>
@@ -70,7 +94,7 @@ export default function AskSiteOpsPage() {
                 className="input bg-gray-950 border-gray-700 text-white"
                 value={question}
                 onChange={e => setQuestion(e.target.value)}
-                placeholder="Ask about OOM, VM kills, robot disconnects, backups, or patch readiness"
+                placeholder="Ask about WarLink, OOM, VM kills, map updates, patching, access, or workstation logs"
               />
               <button disabled={mutation.isPending} className="btn-primary flex items-center gap-2">
                 <Send size={15} />

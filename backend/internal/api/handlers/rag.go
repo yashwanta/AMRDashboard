@@ -49,6 +49,14 @@ type ragHistoryItem struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type ragSuggestion struct {
+	Question    string `json:"question"`
+	Category    string `json:"category"`
+	Description string `json:"description"`
+	EventType   string `json:"event_type,omitempty"`
+	Count       int    `json:"count,omitempty"`
+}
+
 func NewRAGHandler(db *pgxpool.Pool) *RAGHandler {
 	return &RAGHandler{db: db}
 }
@@ -170,6 +178,38 @@ func (h *RAGHandler) History(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, items)
 }
 
+func (h *RAGHandler) Suggestions(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.db.Query(r.Context(), `
+		SELECT event_type, COUNT(*)::int
+		FROM log_events
+		WHERE timestamp > NOW() - INTERVAL '30 days'
+		  AND event_type <> 'unknown'
+		GROUP BY event_type
+		ORDER BY COUNT(*) DESC`)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	counts := map[string]int{}
+	for rows.Next() {
+		var eventType string
+		var count int
+		if err := rows.Scan(&eventType, &count); err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		counts[eventType] = count
+	}
+	if err := rows.Err(); err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	jsonOK(w, buildRAGSuggestions(counts))
+}
+
 func (h *RAGHandler) searchEvents(r *http.Request, question string) ([]ragSourceEvent, error) {
 	terms := meaningfulTerms(question)
 	where := "WHERE le.timestamp > NOW() - INTERVAL '30 days'"
@@ -230,6 +270,91 @@ func (h *RAGHandler) searchEvents(r *http.Request, question string) ([]ragSource
 		events = append(events, ev)
 	}
 	return events, nil
+}
+
+func buildRAGSuggestions(counts map[string]int) []ragSuggestion {
+	catalog := []ragSuggestion{
+		{
+			Question:    "What is happening with WarLink on Springfield Edge?",
+			Category:    "WarLink / PLC",
+			Description: "Explains PLC connection failures, affected tags, repeated attempts, and deadman/heartbeat risk.",
+			EventType:   "warlink_failure",
+		},
+		{
+			Question:    "Why did the robot disconnect?",
+			Category:    "Robots",
+			Description: "Finds FleetManager disconnect evidence and likely robot/network/service checks.",
+			EventType:   "robot_offline",
+		},
+		{
+			Question:    "Which VM was killed by OOM and why?",
+			Category:    "OOM / Memory",
+			Description: "Uses Proxmox OOM evidence to identify killed VM, memory culprit, and recommended fix.",
+			EventType:   "vm_killed_by_oom",
+		},
+		{
+			Question:    "Who pushed an RDS map update and did it succeed?",
+			Category:    "RDS Maps",
+			Description: "Looks for map upload/push evidence, user, source IP, result, and raw log details.",
+			EventType:   "rds_map_update",
+		},
+		{
+			Question:    "Which servers or workstations are missing patches?",
+			Category:    "Patching",
+			Description: "Summarizes OpsForge patch inventory from list/preview upgrade runs.",
+			EventType:   "patch_inventory",
+		},
+		{
+			Question:    "Did anyone open a Proxmox console or login recently?",
+			Category:    "Access Review",
+			Description: "Reviews Proxmox console/API access, SSH, sudo, and login activity.",
+			EventType:   "ssh_login_activity",
+		},
+		{
+			Question:    "Are there disk or SMART issues on any server?",
+			Category:    "Storage",
+			Description: "Finds disk, filesystem, storage, and SMART health evidence.",
+			EventType:   "disk_smart_issue",
+		},
+		{
+			Question:    "Which services or apps are failing?",
+			Category:    "Services",
+			Description: "Summarizes application crash, service failure, and high-severity error evidence.",
+			EventType:   "service_failure",
+		},
+		{
+			Question:    "Were there shutdowns or reboots recently?",
+			Category:    "Power / Reboot",
+			Description: "Checks Ubuntu, Proxmox, and VM reboot/shutdown evidence.",
+			EventType:   "ubuntu_server_reboot",
+		},
+	}
+
+	for i := range catalog {
+		switch catalog[i].EventType {
+		case "patch_inventory":
+			catalog[i].Count = 0
+		case "disk_smart_issue":
+			catalog[i].Count = counts["disk_smart_issue"] + counts["disk_error"]
+		case "service_failure":
+			catalog[i].Count = counts["service_failure"] + counts["crash"] + counts["error"]
+		case "ubuntu_server_reboot":
+			catalog[i].Count = counts["ubuntu_server_reboot"] + counts["ubuntu_server_shutdown"] + counts["proxmox_host_reboot"] + counts["proxmox_host_shutdown"] + counts["vm_reboot"] + counts["vm_stopped"]
+		default:
+			catalog[i].Count = counts[catalog[i].EventType]
+		}
+	}
+
+	sort.SliceStable(catalog, func(i, j int) bool {
+		if catalog[i].Count != catalog[j].Count {
+			return catalog[i].Count > catalog[j].Count
+		}
+		return i < j
+	})
+	if len(catalog) > 8 {
+		return catalog[:8]
+	}
+	return catalog
 }
 
 func isWarLinkQuestion(question string) bool {
