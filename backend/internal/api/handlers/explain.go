@@ -21,6 +21,14 @@ type proxmoxAccessDetails struct {
 	Action       string
 }
 
+type rdsMapDetails struct {
+	Action string
+	Status string
+	User   string
+	IP     string
+	Map    string
+}
+
 func enrichLogEvent(ev *models.LogEvent) {
 	if ev == nil {
 		return
@@ -41,6 +49,23 @@ func PlainEnglishLog(ev models.LogEvent) string {
 			return fmt.Sprintf("Someone using %s opened the Proxmox console/VNC session for %s %s from IP %s on %s.", access.User, access.ResourceType, access.ResourceID, access.ClientIP, access.Time)
 		}
 		return fmt.Sprintf("Someone using %s made a Proxmox API request from IP %s on %s.", access.User, access.ClientIP, access.Time)
+	}
+	if ev.EventType == "rds_map_update" {
+		details := parseRDSMapDetails(raw)
+		parts := []string{"An RDS map update was recorded"}
+		if details.Status != "" {
+			parts = append(parts, "with status "+details.Status)
+		}
+		if details.User != "" {
+			parts = append(parts, "by "+details.User)
+		}
+		if details.IP != "" {
+			parts = append(parts, "from IP "+details.IP)
+		}
+		if details.Map != "" {
+			parts = append(parts, "for map "+details.Map)
+		}
+		return strings.Join(parts, " ") + "."
 	}
 
 	if robotIP := extractRobotIP(raw); ev.EventType == "robot_offline" && robotIP != "" {
@@ -101,6 +126,8 @@ func PlainEnglishLog(ev models.LogEvent) string {
 		return "A network, DHCP, link, or reachability failure was recorded."
 	case "ssh_login_activity":
 		return "SSH, sudo, login, or Proxmox access activity was recorded."
+	case "rds_map_update":
+		return "An RDS map update, upload, deploy, or push event was recorded."
 	case "service_failure":
 		return "A system service failed or entered a failed state."
 	case "ubuntu_log_gap":
@@ -133,6 +160,13 @@ func RecommendedAction(ev models.LogEvent) string {
 
 	if access := parseProxmoxAccessDetails(raw); access != nil {
 		return fmt.Sprintf("Reference only. Concern only if you did not do it, do not recognize %s, or %s should not have been used.", access.ClientIP, access.User)
+	}
+	if ev.EventType == "rds_map_update" {
+		details := parseRDSMapDetails(raw)
+		if details.Status == "failed" || details.Status == "broken" {
+			return "Review the RDS map update result, confirm which user/IP pushed it, and verify robots can load or use the updated map."
+		}
+		return "Reference only. Confirm the user/IP was expected and verify robot behavior after the map update."
 	}
 
 	if ev.EventType == "robot_offline" {
@@ -199,6 +233,44 @@ func parseProxmoxAccessDetails(raw string) *proxmoxAccessDetails {
 		out.Action = "console"
 	}
 	return out
+}
+
+func parseRDSMapDetails(raw string) rdsMapDetails {
+	lower := strings.ToLower(raw)
+	out := rdsMapDetails{Action: "map update"}
+	switch {
+	case strings.Contains(lower, "fail") || strings.Contains(lower, "error") || strings.Contains(lower, "rollback"):
+		out.Status = "failed"
+	case strings.Contains(lower, "break") || strings.Contains(lower, "broken"):
+		out.Status = "broken"
+	case strings.Contains(lower, "success") || strings.Contains(lower, "complete") || strings.Contains(lower, "finished") || strings.Contains(lower, " ok"):
+		out.Status = "successful"
+	}
+	out.User = firstRegex(raw,
+		`(?i)\buser(?:name)?[=: ]+([A-Za-z0-9_.@-]+)`,
+		`(?i)\boperator[=: ]+([A-Za-z0-9_.@-]+)`,
+		`(?i)\baccount[=: ]+([A-Za-z0-9_.@-]+)`,
+		`(?i)\bby\s+([A-Za-z0-9_.@-]+)`,
+	)
+	out.IP = firstRegex(raw,
+		`(?i)\b(?:client|source|remote|from|ip)[=: ]+([0-9]{1,3}(?:\.[0-9]{1,3}){3})`,
+	)
+	out.Map = firstRegex(raw,
+		`(?i)\bmap\s+name:\[([^\]]+)`,
+		`(?i)\b(?:map|smap|scene)[=: ]+([A-Za-z0-9_.@:/-]+)`,
+		`(?i)\b([A-Za-z0-9_.@:/-]+\.(?:smap|map|json|zip))\b`,
+	)
+	return out
+}
+
+func firstRegex(raw string, patterns ...string) string {
+	for _, pattern := range patterns {
+		match := regexp.MustCompile(pattern).FindStringSubmatch(raw)
+		if len(match) > 1 {
+			return strings.Trim(match[1], `"'[],;`)
+		}
+	}
+	return ""
 }
 
 func formatProxmoxAccessTime(raw string) string {

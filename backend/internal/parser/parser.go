@@ -154,6 +154,9 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 
 	ts := extractTimestamp(line)
 	matchLine := strings.ToLower(line)
+	if severity, ok := classifyRDSMapUpdate(matchLine, source); ok {
+		return newEvent(serverID, ts, "rds_map_update", severity, line, source)
+	}
 	if strings.HasPrefix(source, "proxmox") && isProxmoxAccessLog(matchLine) {
 		return newEvent(serverID, ts, "ssh_login_activity", "low", line, source)
 	}
@@ -177,6 +180,27 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 	}
 
 	return newEvent(serverID, ts, "unknown", "low", line, source)
+}
+
+func classifyRDSMapUpdate(line, source string) (string, bool) {
+	source = strings.ToLower(source)
+	sourceOK := strings.Contains(source, "rds") ||
+		strings.Contains(source, "roboshop") ||
+		strings.Contains(source, "journald_amr") ||
+		strings.Contains(line, "roboshop") ||
+		strings.Contains(line, "rds")
+	if !sourceOK {
+		return "", false
+	}
+	hasSubject := hasAny(line, " map", "map=", "map:", ".map", "smap", "scene")
+	hasAction := hasAny(line, "push", "upload", "update", "deploy", "load", "save", "publish", "import")
+	if !hasSubject || !hasAction {
+		return "", false
+	}
+	if hasAny(line, "fail", "failed", "failure", "error", "break", "broken", "rollback") {
+		return "high", true
+	}
+	return "info", true
 }
 
 func isProxmoxAccessLog(line string) bool {

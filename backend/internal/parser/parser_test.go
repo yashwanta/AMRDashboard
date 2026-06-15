@@ -78,6 +78,20 @@ func TestParseLineLogReviewCategories(t *testing.T) {
 			eventType: "unknown",
 			severity:  "low",
 		},
+		{
+			name:      "rds map update success",
+			line:      `2026-06-15T10:11:12Z rds map push success user=operator1 client=10.2.1.60 map=LineA.smap`,
+			source:    "rds_file_logs",
+			eventType: "rds_map_update",
+			severity:  "info",
+		},
+		{
+			name:      "rds map update failure",
+			line:      `2026-06-15T10:11:12Z rds scene upload failed user=operator1 source=10.2.1.60 map=LineA.smap`,
+			source:    "rds_file_logs",
+			eventType: "rds_map_update",
+			severity:  "high",
+		},
 	}
 
 	for _, tt := range tests {

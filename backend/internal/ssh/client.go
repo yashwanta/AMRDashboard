@@ -105,7 +105,7 @@ func (c *Client) FetchLogs(since time.Time, appLogPaths string) (map[string]stri
 	// -- journald: AMR / RDS / Roboshop connection + crash events
 	amrGrep := "Roboshop|rds|AMR|10[.]216[.]35|SocketState|ConnectedState|UnconnectedState" +
 		"|ClosingState|remote host closed|Connect timeout|Add device failed|Not connected" +
-		"|slotTcpError|setLastError|timeout|disconnect|connected|19204|19205|19206|19207"
+		"|slotTcpError|setLastError|timeout|disconnect|connected|map|smap|scene|upload|deploy|push|19204|19205|19206|19207"
 	run("journald_amr", fmt.Sprintf(
 		"journalctl --since %q --no-pager -o short-iso 2>/dev/null | grep -Ei %q || true",
 		sinceStr, amrGrep))
@@ -132,7 +132,7 @@ func (c *Client) FetchLogs(since time.Time, appLogPaths string) (map[string]stri
 	roboshopGrep := "AMR|10[.]216[.]35|SocketState|ConnectedState|UnconnectedState|ClosingState" +
 		"|remote host closed|Connect timeout|Add device failed|Not connected|slotTcpError" +
 		"|setLastError|timeout|disconnect|connected|19204|19205|19206|19207" +
-		"|error|failed|fatal|exception|segfault|scene|smap"
+		"|error|failed|fatal|exception|segfault|scene|smap|map|upload|deploy|push"
 	run("roboshop_app", fmt.Sprintf(
 		"find /opt/Roboshop/bin/location/appInfo/log -type f -iname '*.log' -print0 2>/dev/null"+
 			" | xargs -0 awk -v start=%s -v end=%s"+
@@ -144,7 +144,7 @@ func (c *Client) FetchLogs(since time.Time, appLogPaths string) (map[string]stri
 	rdsGrep := "AMR|10[.]216[.]35|SocketState|ConnectedState|UnconnectedState|ClosingState" +
 		"|remote host closed|Connect timeout|Add device failed|Not connected|slotTcpError" +
 		"|setLastError|timeout|disconnect|connected|19204|19205|19206|19207" +
-		"|error|failed|fatal|exception|scene|smap|mysql|database|segfault"
+		"|error|failed|fatal|exception|scene|smap|map|upload|deploy|push|mysql|database|segfault"
 	run("rds_file_logs",
 		"find /opt/data/rds /opt/data/rdscore /opt/data/robod -type f"+
 			" \\( -iname '*.log' -o -iname '*.out' -o -iname '*.err' \\) -mmin -1440 -print0 2>/dev/null"+

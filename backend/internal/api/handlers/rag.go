@@ -280,6 +280,14 @@ func eventQuestionRank(question string, ev ragSourceEvent) int {
 			return 1
 		}
 		return 20
+	case strings.Contains(q, "map") || strings.Contains(q, "rds") || strings.Contains(q, "scene") || strings.Contains(q, "smap"):
+		if ev.EventType == "rds_map_update" {
+			return 0
+		}
+		if strings.Contains(raw, "map") || strings.Contains(raw, "smap") || strings.Contains(raw, "scene") {
+			return 1
+		}
+		return 20
 	case strings.Contains(q, "disk") || strings.Contains(q, "storage") || strings.Contains(q, "smart") || strings.Contains(q, "filesystem"):
 		if ev.EventType == "disk_smart_issue" || ev.EventType == "disk_error" {
 			return 0

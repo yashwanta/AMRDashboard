@@ -112,6 +112,35 @@ SET event_type='ssh_login_activity', severity='low'
 WHERE (raw_line ILIKE '%pveproxy/access.log%' OR message ILIKE '%pveproxy/access.log%')
   AND (raw_line ILIKE '%/api2/%' OR message ILIKE '%/api2/%');
 
+UPDATE log_events
+SET event_type='rds_map_update',
+    severity=CASE
+        WHEN COALESCE(raw_line, message) ~* '(fail|failed|failure|error|break|broken|rollback)' THEN 'high'
+        ELSE 'info'
+    END
+WHERE (
+    COALESCE(raw_line, message) ~* '(map|smap|scene)'
+    AND COALESCE(raw_line, message) ~* '(push|upload|update|deploy|load|save|publish|import)'
+    AND (
+        source ILIKE '%rds%'
+        OR source ILIKE '%roboshop%'
+        OR source ILIKE '%journald_amr%'
+        OR COALESCE(raw_line, message) ILIKE '%Roboshop%'
+        OR COALESCE(raw_line, message) ILIKE '%RDS%'
+    )
+);
+
+UPDATE log_events
+SET event_type='unknown', severity='low'
+WHERE event_type='rds_map_update'
+  AND NOT (
+      source ILIKE '%rds%'
+      OR source ILIKE '%roboshop%'
+      OR source ILIKE '%journald_amr%'
+      OR COALESCE(raw_line, message) ILIKE '%Roboshop%'
+      OR COALESCE(raw_line, message) ILIKE '%RDS%'
+  );
+
 CREATE TABLE IF NOT EXISTS app_users (
     id            BIGSERIAL PRIMARY KEY,
     username      TEXT NOT NULL UNIQUE,

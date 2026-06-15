@@ -59,6 +59,7 @@ export interface LogEvent {
     | 'disk_smart_issue'
     | 'network_dhcp_failure'
     | 'ssh_login_activity'
+    | 'rds_map_update'
     | 'service_failure'
     | 'ubuntu_log_gap'
     | 'power_network_event'

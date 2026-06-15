@@ -92,7 +92,7 @@ func (h *LogHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 		var termClauses []string
 		for _, term := range terms {
-			termClauses = append(termClauses, "(le.message ILIKE $"+strconv.Itoa(argN)+" OR le.source ILIKE $"+strconv.Itoa(argN)+" OR s.name ILIKE $"+strconv.Itoa(argN)+")")
+			termClauses = append(termClauses, "(le.message ILIKE $"+strconv.Itoa(argN)+" OR COALESCE(le.raw_line,'') ILIKE $"+strconv.Itoa(argN)+" OR le.source ILIKE $"+strconv.Itoa(argN)+" OR s.name ILIKE $"+strconv.Itoa(argN)+")")
 			args = append(args, "%"+term+"%")
 			argN++
 		}

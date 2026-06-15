@@ -39,6 +39,13 @@ interface ProxmoxAccessLog {
   action: 'console' | 'api' | 'other'
 }
 
+interface RdsMapLog {
+  status?: 'successful' | 'failed' | 'broken'
+  user?: string
+  ip?: string
+  map?: string
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 function parseRdsLog(msg: string): RdsLog | null {
@@ -96,6 +103,42 @@ function parseProxmoxAccessLog(raw: string): ProxmoxAccessLog | null {
   }
 }
 
+function parseRdsMapLog(raw: string): RdsMapLog {
+  const lower = raw.toLowerCase()
+  const status = lower.includes('fail') || lower.includes('error') || lower.includes('rollback')
+    ? 'failed'
+    : lower.includes('break') || lower.includes('broken')
+      ? 'broken'
+      : lower.includes('success') || lower.includes('complete') || lower.includes('finished') || lower.includes(' ok')
+        ? 'successful'
+        : undefined
+  return {
+    status,
+    user: firstMatch(raw, [
+      /\buser(?:name)?[=: ]+([A-Za-z0-9_.@-]+)/i,
+      /\boperator[=: ]+([A-Za-z0-9_.@-]+)/i,
+      /\baccount[=: ]+([A-Za-z0-9_.@-]+)/i,
+      /\bby\s+([A-Za-z0-9_.@-]+)/i,
+    ]),
+    ip: firstMatch(raw, [
+      /\b(?:client|source|remote|from|ip)[=: ]+([0-9]{1,3}(?:\.[0-9]{1,3}){3})/i,
+    ]),
+    map: firstMatch(raw, [
+      /\bmap\s+name:\[([^\]]+)/i,
+      /\b(?:map|smap|scene)[=: ]+([A-Za-z0-9_.@:/-]+)/i,
+      /\b([A-Za-z0-9_.@:/-]+\.(?:smap|map|json|zip))\b/i,
+    ]),
+  }
+}
+
+function firstMatch(raw: string, patterns: RegExp[]): string | undefined {
+  for (const pattern of patterns) {
+    const match = raw.match(pattern)
+    if (match?.[1]) return match[1].replace(/^["'\[]|["'\],;]$/g, '')
+  }
+  return undefined
+}
+
 function safeDecodeURIComponent(value: string): string {
   try {
     return decodeURIComponent(value)
@@ -137,6 +180,15 @@ function explainMessage(ev: LogEvent): string {
     return `${access.user} opened a Proxmox console session for ${access.resourceType} ${access.resourceId} from ${access.clientIP}.`
   }
   if (access) return `${access.user} made a Proxmox API request from ${access.clientIP}.`
+  if (ev.event_type === 'rds_map_update') {
+    const map = parseRdsMapLog(raw)
+    const parts = ['An RDS map update was recorded']
+    if (map.status) parts.push(`with status ${map.status}`)
+    if (map.user) parts.push(`by ${map.user}`)
+    if (map.ip) parts.push(`from IP ${map.ip}`)
+    if (map.map) parts.push(`for map ${map.map}`)
+    return `${parts.join(' ')}.`
+  }
   const rds = parseRdsLog(raw)
   const oom = ev.oom_analysis
   if (ev.event_type === 'robot_offline' && rds?.serverIP) {
@@ -181,6 +233,11 @@ function suggestAction(ev: LogEvent): string | null {
   const access = parseProxmoxAccessLog(raw)
   if (access?.action === 'console') return 'Reference only: confirm this was expected if you did not open the console, do not recognize the source IP, or root@pam should not have been used.'
   if (access) return 'Reference only: confirm this Proxmox API activity was expected if the user or source IP is unfamiliar.'
+  if (ev.event_type === 'rds_map_update') {
+    const map = parseRdsMapLog(raw)
+    if (map.status === 'failed' || map.status === 'broken') return 'Review the RDS map update result, confirm which user/IP pushed it, and verify robots can load or use the updated map.'
+    return 'Reference only: confirm the user/IP was expected and verify robot behavior after the map update.'
+  }
   const message = raw.toLowerCase()
   if (ev.event_type === 'robot_offline') {
     if (message.includes('timeout')) return 'Check robot power and network reachability from the server.'
@@ -218,6 +275,15 @@ function friendlySummary(ev: LogEvent): string {
     return `${access.user} opened console for ${access.resourceType} ${access.resourceId} from ${access.clientIP}`
   }
   if (access) return `${access.user} made Proxmox API request from ${access.clientIP}`
+  if (ev.event_type === 'rds_map_update') {
+    const map = parseRdsMapLog(raw)
+    return [
+      map.status ? `Map update ${map.status}` : 'Map update',
+      map.user ? `by ${map.user}` : null,
+      map.ip ? `from ${map.ip}` : null,
+      map.map ? `(${map.map})` : null,
+    ].filter(Boolean).join(' ')
+  }
   const rds = parseRdsLog(raw)
   if (ev.event_type === 'robot_offline' && rds?.serverIP) {
     return `${rds.serverIP} ${rds.tcpReason ? `- ${rds.tcpReason}` : '- disconnected'}`
@@ -386,6 +452,25 @@ export default function LogsTable({ events, loading }: Props) {
                               <div className="text-sm font-semibold text-gray-200 font-mono truncate">{field.value}</div>
                             </div>
                           ))}
+                        </div>
+                      )}
+
+                      {ev.event_type === 'rds_map_update' && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {(() => {
+                            const map = parseRdsMapLog(raw)
+                            return [
+                              { label: 'Result', value: map.status ?? 'recorded' },
+                              { label: 'User', value: map.user ?? '-' },
+                              { label: 'Source IP', value: map.ip ?? '-' },
+                              { label: 'Map / Scene', value: map.map ?? '-' },
+                            ].map(field => (
+                              <div key={field.label} className="bg-gray-900 border border-gray-700 rounded-lg p-3">
+                                <div className="text-xs text-gray-500 mb-1">{field.label}</div>
+                                <div className="text-sm font-semibold text-gray-200 font-mono truncate">{field.value}</div>
+                              </div>
+                            ))
+                          })()}
                         </div>
                       )}
 
