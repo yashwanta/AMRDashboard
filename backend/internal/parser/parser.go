@@ -154,6 +154,9 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 
 	ts := extractTimestamp(line)
 	matchLine := strings.ToLower(line)
+	if source == "rds_network_neighbors" {
+		return newEvent(serverID, ts, "unknown", "low", line, source)
+	}
 	if severity, ok := classifyRDSMapUpdate(matchLine, source); ok {
 		return newEvent(serverID, ts, "rds_map_update", severity, line, source)
 	}

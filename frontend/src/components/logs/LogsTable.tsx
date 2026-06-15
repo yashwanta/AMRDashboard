@@ -43,6 +43,7 @@ interface RdsMapLog {
   status?: 'successful' | 'failed' | 'broken'
   user?: string
   ip?: string
+  mac?: string
   map?: string
 }
 
@@ -123,6 +124,10 @@ function parseRdsMapLog(raw: string): RdsMapLog {
     ip: firstMatch(raw, [
       /\b(?:client|source|remote|from|ip)[=: ]+([0-9]{1,3}(?:\.[0-9]{1,3}){3})/i,
     ]),
+    mac: firstMatch(raw, [
+      /\b(?:mac|hwaddr|lladdr)[=: ]+(([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})/i,
+      /\b(([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\b/,
+    ]),
     map: firstMatch(raw, [
       /\bmap\s+name:\[([^\]]+)/i,
       /\b(?:map|smap|scene)[=: ]+([A-Za-z0-9_.@:/-]+)/i,
@@ -186,6 +191,7 @@ function explainMessage(ev: LogEvent): string {
     if (map.status) parts.push(`with status ${map.status}`)
     if (map.user) parts.push(`by ${map.user}`)
     if (map.ip) parts.push(`from IP ${map.ip}`)
+    if (map.mac) parts.push(`with MAC ${map.mac}`)
     if (map.map) parts.push(`for map ${map.map}`)
     return `${parts.join(' ')}.`
   }
@@ -281,6 +287,7 @@ function friendlySummary(ev: LogEvent): string {
       map.status ? `Map update ${map.status}` : 'Map update',
       map.user ? `by ${map.user}` : null,
       map.ip ? `from ${map.ip}` : null,
+      map.mac ? `MAC ${map.mac}` : null,
       map.map ? `(${map.map})` : null,
     ].filter(Boolean).join(' ')
   }
@@ -463,6 +470,7 @@ export default function LogsTable({ events, loading }: Props) {
                               { label: 'Result', value: map.status ?? 'recorded' },
                               { label: 'User', value: map.user ?? '-' },
                               { label: 'Source IP', value: map.ip ?? '-' },
+                              { label: 'MAC', value: map.mac ?? '-' },
                               { label: 'Map / Scene', value: map.map ?? '-' },
                             ].map(field => (
                               <div key={field.label} className="bg-gray-900 border border-gray-700 rounded-lg p-3">

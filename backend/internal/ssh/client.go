@@ -150,6 +150,23 @@ func (c *Client) FetchLogs(since time.Time, appLogPaths string) (map[string]stri
 			" \\( -iname '*.log' -o -iname '*.out' -o -iname '*.err' \\) -mmin -1440 -print0 2>/dev/null"+
 			" | xargs -0 grep -HinEi "+fmt.Sprintf("%q", rdsGrep)+" 2>/dev/null || true")
 
+	// -- RDS / Roboshop API, access, and audit logs. These are the most likely
+	// places to include who pushed a map and the client IP used for the upload.
+	mapAuditGrep := "map|smap|scene|upload|deploy|push|publish|import|POST|PUT|PATCH|user|username|operator|account|client|remote|remote_addr|source|ip|mac"
+	mapActionGrep := "map|smap|scene|upload|deploy|push|publish|import|POST|PUT|PATCH"
+	run("rds_access_logs", fmt.Sprintf(
+		"find /var/log/nginx /var/log/apache2 /var/log/httpd /opt/data/rds /opt/data/rdscore /opt/data/robod /opt/Roboshop -type f"+
+			" \\( -iname '*access*.log*' -o -iname '*api*.log*' -o -iname '*http*.log*' -o -iname '*web*.log*' \\) -mmin -10080 -print0 2>/dev/null"+
+			" | xargs -0 zgrep -HinEi %q 2>/dev/null"+
+			" | grep -Ei %q | tail -n 5000 || true",
+		mapAuditGrep, mapActionGrep))
+	run("rds_audit_logs", fmt.Sprintf(
+		"find /opt/data/rds /opt/data/rdscore /opt/data/robod /opt/Roboshop /var/log -type f"+
+			" \\( -iname '*audit*.log*' -o -iname '*history*.log*' -o -iname '*operation*.log*' -o -iname '*operator*.log*' -o -iname '*user*.log*' \\) -mmin -10080 -print0 2>/dev/null"+
+			" | xargs -0 zgrep -HinEi %q 2>/dev/null"+
+			" | grep -Ei %q | tail -n 5000 || true",
+		mapAuditGrep, mapActionGrep))
+
 	if strings.TrimSpace(appLogPaths) != "" {
 		for i, path := range strings.Split(appLogPaths, "\n") {
 			path = strings.TrimSpace(path)
@@ -178,6 +195,12 @@ func (c *Client) FetchLogs(since time.Time, appLogPaths string) (map[string]stri
 	// -- auth.log
 	run("auth.log", "zgrep -hEi 'sshd|accepted password|accepted publickey|failed password|session opened|session closed|sudo:' /var/log/auth.log* 2>/dev/null | tail -n 2000 || true")
 
+	// -- Neighbor table: can help map a client IP to a MAC only when the host has
+	// recently talked to that client on the same L2 network.
+	run("rds_network_neighbors",
+		"echo '=ip_neigh='; ip -color=never neigh show 2>/dev/null || ip neigh show 2>/dev/null || true;"+
+			" echo '=arp='; arp -an 2>/dev/null || true")
+
 	// -- system info snapshot
 	run("system_info",
 		"echo '=uptime='; uptime;"+
@@ -194,6 +217,8 @@ func (c *Client) FetchLogs(since time.Time, appLogPaths string) (map[string]stri
 		"mysql -e 'SHOW DATABASES;' 2>/dev/null;"+
 			" mysql -D rds -e 'SELECT COUNT(*) AS scene_records, MAX(id) AS max_id,"+
 			" MAX(create_time) AS last_scene_save FROM t_scene_record;' 2>/dev/null || true")
+	run("rds_db_audit",
+		"mysql -N -B -e \"SELECT table_schema, table_name, column_name FROM information_schema.columns WHERE table_schema NOT IN ('information_schema','mysql','performance_schema','sys') AND (table_name REGEXP 'map|scene|audit|log|history|operation|operator|user' OR column_name REGEXP 'map|scene|user|operator|account|ip|mac|client|remote|created|updated') ORDER BY table_schema, table_name, ordinal_position LIMIT 300;\" 2>/dev/null || true")
 
 	return logs, nil
 }

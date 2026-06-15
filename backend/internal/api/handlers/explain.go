@@ -26,6 +26,7 @@ type rdsMapDetails struct {
 	Status string
 	User   string
 	IP     string
+	MAC    string
 	Map    string
 }
 
@@ -61,6 +62,9 @@ func PlainEnglishLog(ev models.LogEvent) string {
 		}
 		if details.IP != "" {
 			parts = append(parts, "from IP "+details.IP)
+		}
+		if details.MAC != "" {
+			parts = append(parts, "with MAC "+details.MAC)
 		}
 		if details.Map != "" {
 			parts = append(parts, "for map "+details.Map)
@@ -254,6 +258,10 @@ func parseRDSMapDetails(raw string) rdsMapDetails {
 	)
 	out.IP = firstRegex(raw,
 		`(?i)\b(?:client|source|remote|from|ip)[=: ]+([0-9]{1,3}(?:\.[0-9]{1,3}){3})`,
+	)
+	out.MAC = firstRegex(raw,
+		`(?i)\b(?:mac|hwaddr|lladdr)[=: ]+(([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})`,
+		`\b(([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\b`,
 	)
 	out.Map = firstRegex(raw,
 		`(?i)\bmap\s+name:\[([^\]]+)`,
