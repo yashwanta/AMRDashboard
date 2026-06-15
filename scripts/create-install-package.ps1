@@ -22,6 +22,20 @@ function Copy-RepoItem([string]$RelativePath) {
     Copy-Item -Path $source -Destination $dest -Recurse -Force
 }
 
+function Get-ContainerRuntime {
+    $docker = Get-Command docker -ErrorAction SilentlyContinue
+    if ($docker) {
+        return "docker"
+    }
+
+    $podman = Get-Command podman -ErrorAction SilentlyContinue
+    if ($podman) {
+        return "podman"
+    }
+
+    throw "Docker or Podman is required for -IncludeImages."
+}
+
 New-Item -ItemType Directory -Force -Path $PackageRoot | Out-Null
 if (Test-Path $Stage) {
     Remove-Item -LiteralPath $Stage -Recurse -Force
@@ -60,15 +74,13 @@ foreach ($path in $junk) {
 Get-ChildItem -Path $Stage -Recurse -Include "*.pyc", "*.pyo" -ErrorAction SilentlyContinue | Remove-Item -Force
 
 if ($IncludeImages) {
-    $docker = Get-Command docker -ErrorAction SilentlyContinue
-    if (-not $docker) {
-        throw "Docker is required for -IncludeImages."
-    }
-    docker build -t robowatch-backend:latest -f (Join-Path $Root "backend\Dockerfile") (Join-Path $Root "backend")
-    docker build -t robowatch-frontend:latest -f (Join-Path $Root "frontend\Dockerfile") (Join-Path $Root "frontend")
+    $runtime = Get-ContainerRuntime
+    Write-Host "Building bundled container images with $runtime..." -ForegroundColor Cyan
+    & $runtime build -t robowatch-backend:latest -f (Join-Path $Root "backend\Dockerfile") (Join-Path $Root "backend")
+    & $runtime build -t robowatch-frontend:latest -f (Join-Path $Root "frontend\Dockerfile") (Join-Path $Root "frontend")
     $imageDir = Join-Path $Stage "images"
     New-Item -ItemType Directory -Force -Path $imageDir | Out-Null
-    docker save -o (Join-Path $imageDir "robowatch-images.tar") robowatch-backend:latest robowatch-frontend:latest postgres:16-alpine
+    & $runtime save -o (Join-Path $imageDir "robowatch-images.tar") robowatch-backend:latest robowatch-frontend:latest postgres:16-alpine
 }
 
 $zipPath = Join-Path $PackageRoot "$PackageName.zip"
