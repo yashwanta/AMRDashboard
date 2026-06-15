@@ -87,6 +87,9 @@ func (h *SyncHandler) SyncAll(w http.ResponseWriter, r *http.Request) {
 
 // RunScheduled is called by the scheduler — not exposed via HTTP.
 func (h *SyncHandler) RunScheduled() {
+	started := time.Now()
+	log.Println("scheduler: sync run started")
+
 	rows, err := h.db.Query(context.Background(), `SELECT id FROM servers`)
 	if err != nil {
 		log.Printf("scheduler: list servers: %v", err)
@@ -100,11 +103,13 @@ func (h *SyncHandler) RunScheduled() {
 	}
 	rows.Close()
 
+	log.Printf("scheduler: syncing %d server(s)", len(ids))
 	for _, id := range ids {
 		if _, err := h.runSync(context.Background(), id); err != nil {
 			log.Printf("scheduler: sync server %d: %v", id, err)
 		}
 	}
+	log.Printf("scheduler: sync run finished in %s", time.Since(started).Round(time.Second))
 }
 
 func (h *SyncHandler) runSync(ctx context.Context, serverID int) (int, error) {

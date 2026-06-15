@@ -37,6 +37,8 @@ services:
       ALLOW_CUSTOM_COMMANDS: ${ALLOW_CUSTOM_COMMANDS:-false}
       SCHEDULE_AM: "0 6 * * *"
       SCHEDULE_PM: "0 18 * * *"
+      SYNC_ON_STARTUP: ${SYNC_ON_STARTUP:-true}
+      SYNC_STARTUP_DELAY_SECONDS: ${SYNC_STARTUP_DELAY_SECONDS:-20}
     ports:
       - "${API_PORT:-8080}:8080"
 
