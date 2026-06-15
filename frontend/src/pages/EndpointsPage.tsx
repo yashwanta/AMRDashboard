@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, ServerCog, Pencil, Trash2, Wifi, WifiOff } from 'lucide-react'
-import { createServer, deleteServer, getServers, updateServer } from '../api/client'
+import { format, parseISO } from 'date-fns'
+import { Plus, ServerCog, Pencil, Trash2, Wifi, WifiOff, RefreshCw } from 'lucide-react'
+import { createServer, deleteServer, getServers, updateServer, syncServer, syncAll } from '../api/client'
 import type { Server, ServerRequest } from '../types'
 import ServerForm from '../components/servers/ServerForm'
 
@@ -15,17 +16,30 @@ export default function EndpointsPage() {
   const createM = useMutation({ mutationFn: createServer, onSuccess: () => { qc.invalidateQueries({ queryKey: ['servers'] }); setModal(null) } })
   const updateM = useMutation({ mutationFn: ({ id, data }: { id: number; data: ServerRequest }) => updateServer(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['servers'] }); setModal(null) } })
   const deleteM = useMutation({ mutationFn: deleteServer, onSuccess: () => qc.invalidateQueries({ queryKey: ['servers'] }) })
+  const syncM = useMutation({ mutationFn: syncServer, onSuccess: () => qc.invalidateQueries({ queryKey: ['servers'] }) })
+  const syncAllM = useMutation({ mutationFn: () => syncAll('endpoint'), onSuccess: () => qc.invalidateQueries({ queryKey: ['servers'] }) })
 
   return (
     <div className="flex flex-col h-full bg-gray-900 text-gray-100">
       <div className="flex items-center justify-between px-6 py-4 bg-gray-900 border-b border-gray-700">
         <div>
           <h1 className="text-base font-semibold text-white">Endpoints</h1>
-          <p className="text-xs text-gray-400 mt-0.5">{endpoints.length} endpoint computer{endpoints.length !== 1 ? 's' : ''} / workstation{endpoints.length !== 1 ? 's' : ''}</p>
+          <p className="text-xs text-gray-400 mt-0.5">{endpoints.length} endpoint computer{endpoints.length !== 1 ? 's' : ''} / workstation{endpoints.length !== 1 ? 's' : ''} for log sync and OpsForge actions</p>
         </div>
-        <button onClick={() => { setEditing(null); setModal('add') }} className="btn-primary flex items-center gap-2">
-          <Plus size={14} /> Add Endpoint
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => syncAllM.mutate()}
+            disabled={syncAllM.isPending || endpoints.length === 0}
+            className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-600 transition-colors disabled:opacity-50"
+            title="Sync all endpoints in this tab"
+          >
+            <RefreshCw size={14} className={syncAllM.isPending ? 'animate-spin' : ''} />
+            {syncAllM.isPending ? 'Syncing endpoints...' : 'Sync All Endpoints'}
+          </button>
+          <button onClick={() => { setEditing(null); setModal('add') }} className="btn-primary flex items-center gap-2">
+            <Plus size={14} /> Add Endpoint
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-5">
@@ -42,6 +56,9 @@ export default function EndpointsPage() {
                       {server.status === 'online' ? <Wifi size={13} className="text-green-300" /> : <WifiOff size={13} className="text-gray-500" />}
                       <span className={server.status === 'online' ? 'text-xs text-green-300' : 'text-xs text-gray-400'}>{server.status}</span>
                     </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Last synced: {server.last_sync_at ? format(parseISO(server.last_sync_at), 'MMM d, h:mm a') : 'Never'}
+                    </p>
                     <div className="flex flex-wrap gap-2 mt-3">
                       <span className="text-xs px-2 py-0.5 rounded-md border border-gray-700 bg-gray-900 text-gray-300">OpsForge target</span>
                       <span className="text-xs px-2 py-0.5 rounded-md border border-cyan-800 bg-cyan-950/40 text-cyan-200">Endpoint computer</span>
@@ -51,6 +68,14 @@ export default function EndpointsPage() {
                   </div>
                 </div>
                 <div className="flex gap-1">
+                  <button
+                    className="p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 disabled:opacity-50"
+                    onClick={() => syncM.mutate(server.id)}
+                    disabled={syncM.isPending}
+                    title="Sync endpoint logs"
+                  >
+                    <RefreshCw size={14} className={syncM.isPending ? 'animate-spin' : ''} />
+                  </button>
                   <button className="p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-gray-700" onClick={() => { setEditing(server); setModal('edit') }}>
                     <Pencil size={14} />
                   </button>
@@ -66,7 +91,7 @@ export default function EndpointsPage() {
         {endpoints.length === 0 && (
           <div className="text-center text-gray-500 py-16">
             <p className="text-lg text-gray-400 font-medium">No endpoints yet</p>
-            <p className="text-sm mt-1">Add an endpoint to use it as an OpsForge target.</p>
+            <p className="text-sm mt-1">Add an endpoint to sync workstation logs and use it as an OpsForge target.</p>
           </div>
         )}
       </div>

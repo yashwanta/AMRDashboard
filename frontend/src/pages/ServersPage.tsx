@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, RefreshCw, Trash2, Pencil, Wifi, WifiOff, AlertCircle, HelpCircle } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
-import { getServers, createServer, updateServer, deleteServer, syncServer, deepSync } from '../api/client'
+import { getServers, createServer, updateServer, deleteServer, syncServer, deepSync, syncAll } from '../api/client'
 import type { Server, ServerRequest } from '../types'
 import ServerForm from '../components/servers/ServerForm'
 
@@ -77,6 +77,7 @@ export default function ServersPage() {
   const updateM = useMutation({ mutationFn: ({ id, data }: { id: number; data: ServerRequest }) => updateServer(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['servers'] }); setModal(null) } })
   const deleteM = useMutation({ mutationFn: deleteServer, onSuccess: () => qc.invalidateQueries({ queryKey: ['servers'] }) })
   const syncM   = useMutation({ mutationFn: syncServer,   onSuccess: () => qc.invalidateQueries({ queryKey: ['servers'] }) })
+  const syncAllM = useMutation({ mutationFn: () => syncAll('server'), onSuccess: () => qc.invalidateQueries({ queryKey: ['servers'] }) })
 
   return (
     <div className="flex flex-col h-full bg-gray-900 text-gray-100">
@@ -85,10 +86,21 @@ export default function ServersPage() {
           <h1 className="text-base font-semibold text-white">Servers</h1>
           <p className="text-xs text-gray-400 mt-0.5">{serverAssets.length} server{serverAssets.length !== 1 ? 's' : ''} configured</p>
         </div>
-        <button onClick={() => { setEditing(null); setModal('add') }}
-          className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
-          <Plus size={14} /> Add Server
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => syncAllM.mutate()}
+            disabled={syncAllM.isPending || serverAssets.length === 0}
+            className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-600 transition-colors disabled:opacity-50"
+            title="Sync all servers in this tab"
+          >
+            <RefreshCw size={14} className={syncAllM.isPending ? 'animate-spin' : ''} />
+            {syncAllM.isPending ? 'Syncing servers...' : 'Sync All Servers'}
+          </button>
+          <button onClick={() => { setEditing(null); setModal('add') }}
+            className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
+            <Plus size={14} /> Add Server
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-5">

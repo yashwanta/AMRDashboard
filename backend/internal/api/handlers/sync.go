@@ -59,9 +59,22 @@ func (h *SyncHandler) SyncServer(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]int{"job_id": jobID})
 }
 
-// SyncAll triggers sync for every server.
+// SyncAll triggers sync for every server, or a filtered asset type.
 func (h *SyncHandler) SyncAll(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.db.Query(r.Context(), `SELECT id FROM servers`)
+	assetType := r.URL.Query().Get("asset_type")
+	query := `SELECT id FROM servers`
+	args := []any{}
+	if assetType == "server" {
+		query += ` WHERE asset_type <> 'endpoint'`
+	} else if assetType == "endpoint" {
+		query += ` WHERE asset_type = $1`
+		args = append(args, assetType)
+	} else if assetType != "" {
+		jsonError(w, "asset_type must be server or endpoint", http.StatusBadRequest)
+		return
+	}
+
+	rows, err := h.db.Query(r.Context(), query, args...)
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return

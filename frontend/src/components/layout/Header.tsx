@@ -7,7 +7,7 @@ interface Props { title: string }
 export default function Header({ title }: Props) {
   const qc = useQueryClient()
   const { mutate, isPending } = useMutation({
-    mutationFn: syncAll,
+    mutationFn: () => syncAll(),
     onSuccess: () => {
       qc.invalidateQueries()
     },
