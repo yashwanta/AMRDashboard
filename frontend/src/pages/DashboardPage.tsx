@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { format, isValid, parseISO } from 'date-fns'
 import { Bar, BarChart, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -59,8 +59,11 @@ function eventSummary(message: string) {
 
 export default function DashboardPage() {
   const nav = useNavigate()
+  const qc = useQueryClient()
   const [selectedDisconnect, setSelectedDisconnect] = useState<number | null>(null)
   const [syncing, setSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState('')
+  const [syncError, setSyncError] = useState('')
 
   const { data: stats } = useQuery({ queryKey: ['stats'], queryFn: getStats, refetchInterval: 30_000 })
   const { data: timeline = [] } = useQuery({ queryKey: ['timeline'], queryFn: getTimeline, refetchInterval: 60_000 })
@@ -69,14 +72,30 @@ export default function DashboardPage() {
   const { data: rdsIssues = [] } = useQuery({ queryKey: ['logs', 'rds_core_issue'], queryFn: () => getLogs({ event_type: 'rds_core_issue', limit: 5 }), refetchInterval: 30_000 })
   const { data: recent = [] } = useQuery({ queryKey: ['logs', 'recent'], queryFn: () => getLogs({ limit: 6 }), refetchInterval: 30_000 })
 
+  const refreshSyncData = useCallback(() => {
+    qc.invalidateQueries({ queryKey: ['servers'] })
+    qc.invalidateQueries({ queryKey: ['server-stats'] })
+    qc.invalidateQueries({ queryKey: ['stats'] })
+    qc.invalidateQueries({ queryKey: ['logs'] })
+    qc.invalidateQueries({ queryKey: ['timeline'] })
+    qc.invalidateQueries({ queryKey: ['sync-history'] })
+  }, [qc])
+
   const handleSync = useCallback(async () => {
     setSyncing(true)
+    setSyncMessage('')
+    setSyncError('')
     try {
-      await syncAll()
+      const result = await syncAll()
+      setSyncMessage(`Queued sync for ${result.server_ids.length} target(s). Log pulls continue in the background.`)
+      refreshSyncData()
+      window.setTimeout(refreshSyncData, 12_000)
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Sync request failed.')
     } finally {
       window.setTimeout(() => setSyncing(false), 8000)
     }
-  }, [])
+  }, [refreshSyncData])
 
   const chartData = (() => {
     const map: Record<string, Record<string, number>> = {}
@@ -132,11 +151,22 @@ export default function DashboardPage() {
         </div>
         <button onClick={handleSync} disabled={syncing} className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white border border-gray-600 transition-colors disabled:opacity-50">
           <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
-          {syncing ? 'Syncing...' : 'Sync all'}
+          {syncing ? 'Sync queued...' : 'Sync all'}
         </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        {(syncMessage || syncError) && (
+          <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border px-4 py-3 text-sm ${syncError ? 'bg-red-950/40 border-red-800 text-red-100' : 'bg-blue-950/40 border-blue-800 text-blue-100'}`}>
+            <span>{syncError || syncMessage}</span>
+            {!syncError && (
+              <button onClick={() => nav('/sync')} className="self-start sm:self-auto text-xs font-semibold px-3 py-1.5 rounded-md bg-blue-700 hover:bg-blue-600 text-white">
+                View Sync Jobs
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-4 xl:grid-cols-8 gap-3">
           {metricCards.map(c => (
             <button key={c.label} onClick={() => nav(c.href)} className={`${CARD_BG} rounded-lg p-3 relative overflow-hidden text-left transition-colors hover:bg-gray-700/70 hover:border-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/60`}>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { format, parseISO } from 'date-fns'
 import { Plus, ServerCog, Pencil, Trash2, Wifi, WifiOff, RefreshCw } from 'lucide-react'
 import { createServer, deleteServer, getServers, updateServer, syncServer, syncAll } from '../api/client'
@@ -8,16 +9,36 @@ import ServerForm from '../components/servers/ServerForm'
 
 export default function EndpointsPage() {
   const qc = useQueryClient()
+  const nav = useNavigate()
   const { data: servers = [] } = useQuery({ queryKey: ['servers'], queryFn: getServers })
   const endpoints = servers.filter(server => server.asset_type === 'endpoint')
   const [modal, setModal] = useState<'add' | 'edit' | null>(null)
   const [editing, setEditing] = useState<Server | null>(null)
+  const [syncMessage, setSyncMessage] = useState('')
+  const [syncError, setSyncError] = useState('')
+
+  const refreshSyncState = () => {
+    qc.invalidateQueries({ queryKey: ['servers'] })
+    qc.invalidateQueries({ queryKey: ['sync-history'] })
+  }
 
   const createM = useMutation({ mutationFn: createServer, onSuccess: () => { qc.invalidateQueries({ queryKey: ['servers'] }); setModal(null) } })
   const updateM = useMutation({ mutationFn: ({ id, data }: { id: number; data: ServerRequest }) => updateServer(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['servers'] }); setModal(null) } })
   const deleteM = useMutation({ mutationFn: deleteServer, onSuccess: () => qc.invalidateQueries({ queryKey: ['servers'] }) })
   const syncM = useMutation({ mutationFn: syncServer, onSuccess: () => qc.invalidateQueries({ queryKey: ['servers'] }) })
-  const syncAllM = useMutation({ mutationFn: () => syncAll('endpoint'), onSuccess: () => qc.invalidateQueries({ queryKey: ['servers'] }) })
+  const syncAllM = useMutation({
+    mutationFn: () => syncAll('endpoint'),
+    onMutate: () => {
+      setSyncMessage('')
+      setSyncError('')
+    },
+    onSuccess: data => {
+      setSyncMessage(`Queued sync for ${data.server_ids.length} workstation(s). Check Sync Jobs for progress.`)
+      refreshSyncState()
+      window.setTimeout(refreshSyncState, 12_000)
+    },
+    onError: err => setSyncError(err instanceof Error ? err.message : 'Sync request failed.'),
+  })
 
   return (
     <div className="flex flex-col h-full bg-gray-900 text-gray-100">
@@ -43,6 +64,17 @@ export default function EndpointsPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-5">
+        {(syncMessage || syncError) && (
+          <div className={`mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border px-4 py-3 text-sm ${syncError ? 'bg-red-950/40 border-red-800 text-red-100' : 'bg-blue-950/40 border-blue-800 text-blue-100'}`}>
+            <span>{syncError || syncMessage}</span>
+            {!syncError && (
+              <button onClick={() => nav('/sync')} className="self-start sm:self-auto text-xs font-semibold px-3 py-1.5 rounded-md bg-blue-700 hover:bg-blue-600 text-white">
+                View Sync Jobs
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
           {endpoints.map(server => (
             <div key={server.id} className="bg-gray-800 border border-gray-700 rounded-lg p-4">

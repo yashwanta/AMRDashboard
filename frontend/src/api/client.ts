@@ -44,8 +44,12 @@ export const createServer = (data: ServerRequest) => api.post<Server>('/servers'
 export const updateServer = (id: number, data: ServerRequest) => api.put<Server>(`/servers/${id}`, data).then(r => r.data)
 export const deleteServer = (id: number) => api.delete(`/servers/${id}`)
 export const syncServer = (id: number) => api.post<{ job_id: number }>(`/servers/${id}/sync`).then(r => r.data)
+export interface SyncAllResponse {
+  status: string
+  server_ids: number[]
+}
 export const syncAll = (assetType?: 'server' | 'endpoint') =>
-  api.post('/sync/all', null, { params: assetType ? { asset_type: assetType } : undefined }).then(r => r.data)
+  api.post<SyncAllResponse>('/sync/all', null, { params: assetType ? { asset_type: assetType } : undefined }).then(r => r.data)
 export const testConnection = (data: ServerRequest) =>
   api.post<{ success: boolean; error?: string; info?: string }>('/sync/test', data).then(r => r.data)
 
