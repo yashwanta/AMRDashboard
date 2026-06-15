@@ -358,6 +358,9 @@ func (h *LogHandler) Stats(w http.ResponseWriter, r *http.Request) {
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type IN ('vm_stopped','vm_started','vm_reboot','vm_killed_by_oom')`).Scan(&stats.VMEventCount)
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type IN ('vm_killed_by_oom','host_memory_exhaustion','swap_full')`).Scan(&stats.MemoryEventCount)
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type IN ('backup_job','backup_found_vm_stopped')`).Scan(&stats.BackupEventCount)
+	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='rds_core_issue'`).Scan(&stats.RDSCoreIssueCount)
+	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='rds_map_update'`).Scan(&stats.RDSMapUpdateCount)
+	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM log_events WHERE event_type='warlink_failure'`).Scan(&stats.WarLinkIssueCount)
 
 	jsonOK(w, stats)
 }
@@ -743,6 +746,8 @@ func (h *LogHandler) ServerStats(w http.ResponseWriter, r *http.Request) {
 			COALESCE(SUM(CASE WHEN le.event_type='disk_error'    THEN 1 END),0) AS disk_errors,
 			COALESCE(SUM(CASE WHEN le.event_type='error'         THEN 1 END),0) AS errors,
 			COALESCE(SUM(CASE WHEN le.event_type='warning'       THEN 1 END),0) AS warnings,
+			COALESCE(SUM(CASE WHEN le.event_type='rds_core_issue' THEN 1 END),0) AS rds_core_issues,
+			COALESCE(SUM(CASE WHEN le.event_type='warlink_failure' THEN 1 END),0) AS warlink_issues,
 			COALESCE(SUM(CASE WHEN le.severity IN ('critical','high') THEN 1 END),0) AS critical
 		FROM servers s
 		LEFT JOIN log_events le ON le.server_id = s.id
@@ -755,23 +760,25 @@ func (h *LogHandler) ServerStats(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type ServerStat struct {
-		ID           int    `json:"id"`
-		Name         string `json:"name"`
-		Status       string `json:"status"`
-		RobotOffline int    `json:"robot_offline"`
-		RobotOnline  int    `json:"robot_online"`
-		Crashes      int    `json:"crashes"`
-		DiskErrors   int    `json:"disk_errors"`
-		Errors       int    `json:"errors"`
-		Warnings     int    `json:"warnings"`
-		Critical     int    `json:"critical"`
+		ID            int    `json:"id"`
+		Name          string `json:"name"`
+		Status        string `json:"status"`
+		RobotOffline  int    `json:"robot_offline"`
+		RobotOnline   int    `json:"robot_online"`
+		Crashes       int    `json:"crashes"`
+		DiskErrors    int    `json:"disk_errors"`
+		Errors        int    `json:"errors"`
+		Warnings      int    `json:"warnings"`
+		RDSCoreIssues int    `json:"rds_core_issues"`
+		WarLinkIssues int    `json:"warlink_issues"`
+		Critical      int    `json:"critical"`
 	}
 
 	var results []ServerStat
 	for rows.Next() {
 		var s ServerStat
 		rows.Scan(&s.ID, &s.Name, &s.Status, &s.RobotOffline, &s.RobotOnline,
-			&s.Crashes, &s.DiskErrors, &s.Errors, &s.Warnings, &s.Critical)
+			&s.Crashes, &s.DiskErrors, &s.Errors, &s.Warnings, &s.RDSCoreIssues, &s.WarLinkIssues, &s.Critical)
 		results = append(results, s)
 	}
 	if results == nil {

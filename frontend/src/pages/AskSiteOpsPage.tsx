@@ -7,12 +7,17 @@ import type { SiteOpsAnswer, SiteOpsSuggestion } from '../types'
 
 const fallbackPrompts: SiteOpsSuggestion[] = [
   {
-    question: 'What is happening with WarLink on Springfield Edge?',
+    question: 'What is happening with WarLink and PLC connections?',
     category: 'WarLink / PLC',
     description: 'Explain PLC connection failures, affected tags, and repeated attempts.',
   },
   {
-    question: 'Which VM was killed by OOM and why?',
+    question: 'What RDS core issues are happening?',
+    category: 'RDS Core',
+    description: 'Summarize RDS API, database, timeout, and service issues across all servers.',
+  },
+  {
+    question: 'Which VMs were killed by OOM and why?',
     category: 'OOM / Memory',
     description: 'Find the killed VM, memory culprit, and recommended fix.',
   },
@@ -27,6 +32,13 @@ const fallbackPrompts: SiteOpsSuggestion[] = [
     description: 'Summarize patch inventory from OpsForge checks.',
   },
 ]
+
+function globalQuestionText(question: string): string {
+  if (question.toLowerCase().includes('warlink on springfield edge')) {
+    return 'What is happening with WarLink and PLC connections?'
+  }
+  return question
+}
 
 export default function AskSiteOpsPage() {
   const qc = useQueryClient()
@@ -160,12 +172,15 @@ export default function AskSiteOpsPage() {
           </div>
           <div className="divide-y divide-gray-700/60">
             {history.length === 0 && <p className="text-sm text-gray-500 p-4">No questions yet.</p>}
-            {history.map(item => (
-              <button key={item.id} onClick={() => setQuestion(item.question)} className="w-full text-left p-4 hover:bg-gray-700/40 transition-colors">
-                <div className="text-sm text-gray-200 line-clamp-2">{item.question}</div>
+            {history.map(item => {
+              const question = globalQuestionText(item.question)
+              return (
+              <button key={item.id} onClick={() => setQuestion(question)} className="w-full text-left p-4 hover:bg-gray-700/40 transition-colors">
+                <div className="text-sm text-gray-200 line-clamp-2">{question}</div>
                 <div className="text-xs text-gray-500 mt-1">{format(parseISO(item.created_at), 'MMM d, h:mm a')}</div>
               </button>
-            ))}
+              )
+            })}
           </div>
         </aside>
       </div>

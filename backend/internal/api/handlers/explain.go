@@ -71,6 +71,22 @@ func PlainEnglishLog(ev models.LogEvent) string {
 		}
 		return strings.Join(parts, " ") + "."
 	}
+	if ev.EventType == "rds_core_issue" {
+		reason := "RDS logged a core application issue"
+		switch {
+		case strings.Contains(lower, "database") || strings.Contains(lower, "mysql") || strings.Contains(lower, "postgres"):
+			reason = "RDS appears to be having database trouble"
+		case strings.Contains(lower, "timeout") || strings.Contains(lower, "timed out"):
+			reason = "RDS operation timed out"
+		case strings.Contains(lower, "returned 500") || strings.Contains(lower, "api"):
+			reason = "RDS API returned an error"
+		case strings.Contains(lower, "not connected") || strings.Contains(lower, "connection refused") || strings.Contains(lower, "disconnect"):
+			reason = "RDS lost or could not establish a connection"
+		case strings.Contains(lower, "fatal") || strings.Contains(lower, "panic") || strings.Contains(lower, "core dumped"):
+			reason = "RDS application process crashed or hit a fatal error"
+		}
+		return reason + "."
+	}
 	if ev.EventType == "warlink_failure" {
 		details := parseWarLinkDetails(raw)
 		parts := []string{"WarLink could not complete a PLC communication"}
@@ -153,6 +169,8 @@ func PlainEnglishLog(ev models.LogEvent) string {
 		return "A network, DHCP, link, or reachability failure was recorded."
 	case "ssh_login_activity":
 		return "SSH, sudo, login, or Proxmox access activity was recorded."
+	case "rds_core_issue":
+		return "RDS core logged an API, database, timeout, service, or connection issue."
 	case "rds_map_update":
 		return "An RDS map update, upload, deploy, or push event was recorded."
 	case "warlink_failure":
@@ -196,6 +214,9 @@ func RecommendedAction(ev models.LogEvent) string {
 			return "Review the RDS map update result, confirm which user/IP pushed it, and verify robots can load or use the updated map."
 		}
 		return "Reference only. Confirm the user/IP was expected and verify robot behavior after the map update."
+	}
+	if ev.EventType == "rds_core_issue" {
+		return "Check rdscore/RDS service status, recent RDS application logs, database connectivity, disk space, and API health. Keep the raw log for vendor or engineering review."
 	}
 	if ev.EventType == "warlink_failure" {
 		return "Most likely reason: WarLink does not currently have an established PLC connection. Check PLC power/network reachability from Springfield Edge, the shingo-edge/WarLink service connection state, and the affected PLC route/tag before restarting the service."

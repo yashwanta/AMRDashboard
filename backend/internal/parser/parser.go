@@ -160,6 +160,9 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 	if severity, ok := classifyRDSMapUpdate(matchLine, source); ok {
 		return newEvent(serverID, ts, "rds_map_update", severity, line, source)
 	}
+	if severity, ok := classifyRDSCoreIssue(matchLine, source); ok {
+		return newEvent(serverID, ts, "rds_core_issue", severity, line, source)
+	}
 	if severity, ok := classifyWarLinkFailure(matchLine, source); ok {
 		return newEvent(serverID, ts, "warlink_failure", severity, line, source)
 	}
@@ -231,6 +234,42 @@ func classifyRDSMapUpdate(line, source string) (string, bool) {
 		return "high", true
 	}
 	return "info", true
+}
+
+func classifyRDSCoreIssue(line, source string) (string, bool) {
+	source = strings.ToLower(source)
+	sourceOK := strings.Contains(source, "rds") ||
+		strings.Contains(source, "roboshop") ||
+		strings.Contains(source, "journald_amr") ||
+		strings.Contains(line, "rdscore") ||
+		strings.Contains(line, "rds") ||
+		strings.Contains(line, "roboshop")
+	if !sourceOK {
+		return "", false
+	}
+	if hasAny(line,
+		"unconnectedstate", "closingstate", "slottcperror", "add device failed",
+		"warlink", "sendunitdatatransaction", "writetag",
+	) {
+		return "", false
+	}
+	if hasAny(line, "map push", "map upload", "scene upload", "smap") {
+		return "", false
+	}
+	if hasAny(line, "panic", "segfault", "core dumped", "fatal") {
+		return "critical", true
+	}
+	if hasAny(line,
+		"failed", "failure", "exception", "error", "timeout", "timed out",
+		"connection refused", "remote host closed", "not connected", "disconnect",
+		"database", "mysql", "postgres", "api returned 5", "returned 500",
+	) {
+		return "high", true
+	}
+	if hasAny(line, "warning", "retry", "unavailable", "degraded") {
+		return "medium", true
+	}
+	return "", false
 }
 
 func isProxmoxAccessLog(line string) bool {

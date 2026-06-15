@@ -59,6 +59,7 @@ export interface LogEvent {
     | 'disk_smart_issue'
     | 'network_dhcp_failure'
     | 'ssh_login_activity'
+    | 'rds_core_issue'
     | 'rds_map_update'
     | 'warlink_failure'
     | 'service_failure'
@@ -99,6 +100,9 @@ export interface DashboardStats {
   vm_event_count: number
   memory_event_count: number
   backup_event_count: number
+  rds_core_issue_count: number
+  rds_map_update_count: number
+  warlink_issue_count: number
 }
 
 export interface TimelinePoint {

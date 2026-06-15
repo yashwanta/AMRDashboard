@@ -139,6 +139,7 @@ func TestRankEventsForQuestionPrioritizesRobotEvidence(t *testing.T) {
 func TestBuildRAGSuggestionsUsesAvailableEventTypes(t *testing.T) {
 	suggestions := buildRAGSuggestions(map[string]int{
 		"warlink_failure":  42,
+		"rds_core_issue":   12,
 		"vm_killed_by_oom": 8,
 		"rds_map_update":   3,
 	})
@@ -149,12 +150,19 @@ func TestBuildRAGSuggestionsUsesAvailableEventTypes(t *testing.T) {
 		t.Fatalf("expected WarLink suggestion first, got %q", suggestions[0].EventType)
 	}
 	foundOOM := false
+	foundRDS := false
 	for _, suggestion := range suggestions {
 		if suggestion.EventType == "vm_killed_by_oom" && strings.Contains(suggestion.Question, "OOM") {
 			foundOOM = true
 		}
+		if suggestion.EventType == "rds_core_issue" && strings.Contains(suggestion.Question, "RDS") {
+			foundRDS = true
+		}
 	}
 	if !foundOOM {
 		t.Fatalf("expected OOM suggestion in %+v", suggestions)
+	}
+	if !foundRDS {
+		t.Fatalf("expected RDS suggestion in %+v", suggestions)
 	}
 }

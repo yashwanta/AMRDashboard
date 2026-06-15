@@ -68,6 +68,9 @@ type DashboardStats struct {
 	VMEventCount      int `json:"vm_event_count"`
 	MemoryEventCount  int `json:"memory_event_count"`
 	BackupEventCount  int `json:"backup_event_count"`
+	RDSCoreIssueCount int `json:"rds_core_issue_count"`
+	RDSMapUpdateCount int `json:"rds_map_update_count"`
+	WarLinkIssueCount int `json:"warlink_issue_count"`
 }
 
 type ServerRequest struct {

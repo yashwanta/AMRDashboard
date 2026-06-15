@@ -229,6 +229,11 @@ func (h *RAGHandler) searchEvents(r *http.Request, question string) ([]ragSource
 		args = append(args, "%WarLink%", "%SendUnitDataTransaction%", "%WriteTag%")
 		argN += 3
 	}
+	if isRDSQuestion(question) {
+		where += " AND (le.event_type IN ('rds_core_issue','rds_map_update') OR le.message ILIKE $" + strconv.Itoa(argN) + " OR le.raw_line ILIKE $" + strconv.Itoa(argN) + " OR le.source ILIKE $" + strconv.Itoa(argN) + ")"
+		args = append(args, "%rds%")
+		argN++
+	}
 
 	rows, err := h.db.Query(r.Context(), `
 		SELECT le.id, s.name, le.timestamp, le.event_type, le.severity, le.message, le.source, COALESCE(le.raw_line,'')
@@ -275,19 +280,25 @@ func (h *RAGHandler) searchEvents(r *http.Request, question string) ([]ragSource
 func buildRAGSuggestions(counts map[string]int) []ragSuggestion {
 	catalog := []ragSuggestion{
 		{
-			Question:    "What is happening with WarLink on Springfield Edge?",
+			Question:    "What is happening with WarLink and PLC connections?",
 			Category:    "WarLink / PLC",
 			Description: "Explains PLC connection failures, affected tags, repeated attempts, and deadman/heartbeat risk.",
 			EventType:   "warlink_failure",
 		},
 		{
-			Question:    "Why did the robot disconnect?",
+			Question:    "What RDS core issues are happening?",
+			Category:    "RDS Core",
+			Description: "Summarizes rdscore, RDS API, database, timeout, and service issues across all servers.",
+			EventType:   "rds_core_issue",
+		},
+		{
+			Question:    "Why are robots disconnecting?",
 			Category:    "Robots",
 			Description: "Finds FleetManager disconnect evidence and likely robot/network/service checks.",
 			EventType:   "robot_offline",
 		},
 		{
-			Question:    "Which VM was killed by OOM and why?",
+			Question:    "Which VMs were killed by OOM and why?",
 			Category:    "OOM / Memory",
 			Description: "Uses Proxmox OOM evidence to identify killed VM, memory culprit, and recommended fix.",
 			EventType:   "vm_killed_by_oom",
@@ -351,10 +362,16 @@ func buildRAGSuggestions(counts map[string]int) []ragSuggestion {
 		}
 		return i < j
 	})
-	if len(catalog) > 8 {
-		return catalog[:8]
-	}
 	return catalog
+}
+
+func isRDSQuestion(question string) bool {
+	q := strings.ToLower(question)
+	return strings.Contains(q, "rds") ||
+		strings.Contains(q, "rdscore") ||
+		strings.Contains(q, "map") ||
+		strings.Contains(q, "scene") ||
+		strings.Contains(q, "smap")
 }
 
 func isWarLinkQuestion(question string) bool {
@@ -422,11 +439,17 @@ func eventQuestionRank(question string, ev ragSourceEvent) int {
 		}
 		return 20
 	case strings.Contains(q, "map") || strings.Contains(q, "rds") || strings.Contains(q, "scene") || strings.Contains(q, "smap"):
-		if ev.EventType == "rds_map_update" {
+		if ev.EventType == "rds_core_issue" && (strings.Contains(q, "core") || strings.Contains(q, "issue") || strings.Contains(q, "error")) {
 			return 0
 		}
-		if strings.Contains(raw, "map") || strings.Contains(raw, "smap") || strings.Contains(raw, "scene") {
+		if ev.EventType == "rds_map_update" {
 			return 1
+		}
+		if ev.EventType == "rds_core_issue" {
+			return 2
+		}
+		if strings.Contains(raw, "map") || strings.Contains(raw, "smap") || strings.Contains(raw, "scene") {
+			return 3
 		}
 		return 20
 	case isWarLinkQuestion(q):
@@ -637,6 +660,9 @@ func buildRuleBasedSiteOpsAnswer(question string, events []ragSourceEvent) strin
 	if answer := buildRobotDisconnectAnswer(question, events); answer != "" {
 		return answer
 	}
+	if answer := buildRDSAnswer(question, events); answer != "" {
+		return answer
+	}
 	if answer := buildOOMQuestionAnswer(question, events); answer != "" {
 		return answer
 	}
@@ -650,6 +676,61 @@ func buildRuleBasedSiteOpsAnswer(question string, events []ragSourceEvent) strin
 		return answer
 	}
 	return ""
+}
+
+func buildRDSAnswer(question string, events []ragSourceEvent) string {
+	if !isRDSQuestion(question) {
+		return ""
+	}
+	rdsEvents := filterRAGEvents(events, func(ev ragSourceEvent) bool {
+		raw := strings.ToLower(ev.RawLine + " " + ev.Message + " " + ev.Source + " " + ev.EventType)
+		return ev.EventType == "rds_core_issue" ||
+			ev.EventType == "rds_map_update" ||
+			strings.Contains(raw, "rds") ||
+			strings.Contains(raw, "rdscore") ||
+			strings.Contains(raw, "roboshop")
+	})
+	if len(rdsEvents) == 0 {
+		return ""
+	}
+	first := rdsEvents[0]
+	coreCount := 0
+	mapCount := 0
+	for _, ev := range rdsEvents {
+		if ev.EventType == "rds_core_issue" {
+			coreCount++
+		}
+		if ev.EventType == "rds_map_update" {
+			mapCount++
+		}
+	}
+	signals := []string{}
+	if anyRAGEventContains(rdsEvents, "database") || anyRAGEventContains(rdsEvents, "mysql") || anyRAGEventContains(rdsEvents, "postgres") {
+		signals = append(signals, "database trouble")
+	}
+	if anyRAGEventContains(rdsEvents, "timeout") {
+		signals = append(signals, "timeouts")
+	}
+	if anyRAGEventContains(rdsEvents, "returned 500") || anyRAGEventContains(rdsEvents, "api") {
+		signals = append(signals, "RDS API errors")
+	}
+	if anyRAGEventContains(rdsEvents, "failed") || anyRAGEventContains(rdsEvents, "exception") {
+		signals = append(signals, "failed operations")
+	}
+	if len(signals) == 0 {
+		signals = append(signals, "RDS log issues")
+	}
+	return fmt.Sprintf(
+		"Across the current SiteOps logs, I found %d RDS-related event(s): %d core issue(s) and %d map/update event(s). The strongest signal is %s on %s. Latest evidence is from %s at %s: %s. Recommended checks: rdscore service status, RDS API health, database connectivity, disk space, and recent map/update activity. Raw logs are kept below for reference.",
+		len(rdsEvents),
+		coreCount,
+		mapCount,
+		joinHuman(signals),
+		first.ServerName,
+		first.Source,
+		first.Timestamp.Format("Jan 2, 2006 3:04 PM"),
+		truncateForAnswer(first.Message, 220),
+	)
 }
 
 func buildWarLinkAnswer(question string, events []ragSourceEvent) string {

@@ -1,59 +1,81 @@
-import { useState, useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { getStats, getTimeline, getLogs, syncAll, getServerStats } from '../api/client'
-import { format, parseISO, isValid } from 'date-fns'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts'
-import { Server, RefreshCw, AlertTriangle, Activity, Radio, Bell, CheckCircle, Shield } from 'lucide-react'
+import { format, isValid, parseISO } from 'date-fns'
+import { Bar, BarChart, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Activity, AlertTriangle, Bell, CheckCircle, Database, Network, Radio, RefreshCw, Server, Shield } from 'lucide-react'
+import { getLogs, getServerStats, getStats, getTimeline, syncAll } from '../api/client'
+
+const CARD_BG = 'bg-gray-800 border border-gray-700'
+
+interface RdsInfo {
+  serverIP?: string
+  serverPort?: string
+  tcpReason?: string
+  socketState?: string
+}
 
 function safeTime(ts: string) {
-  try { const d = parseISO(ts); return isValid(d) ? format(d, 'h:mm a') : '—' } catch { return '—' }
-}
-
-
-interface RdsInfo { serverIP?: string; serverPort?: string; tcpReason?: string; socketState?: string }
-function parseRds(msg: string): RdsInfo {
-  return {
-    serverIP:   msg.match(/\[Server:([0-9.]+):/)?.[1],
-    serverPort: msg.match(/\[Server:[^:]+:(\d+)\]/)?.[1],
-    tcpReason:  msg.match(/\[Tcp:([^\]]+)\]/)?.[1],
-    socketState:msg.match(/SocketState:(\S+)/)?.[1],
+  try {
+    const d = parseISO(ts)
+    return isValid(d) ? format(d, 'h:mm a') : '-'
+  } catch {
+    return '-'
   }
 }
+
+function parseRds(msg: string): RdsInfo {
+  return {
+    serverIP: msg.match(/\[Server:([0-9.]+):/)?.[1],
+    serverPort: msg.match(/\[Server:[^:]+:(\d+)\]/)?.[1],
+    tcpReason: msg.match(/\[Tcp:([^\]]+)\]/)?.[1],
+    socketState: msg.match(/SocketState:(\S+)/)?.[1],
+  }
+}
+
 function disconnectLabel(msg: string): string {
   const m = msg.toLowerCase()
-  if (m.includes('connection refused'))  return 'TCP connection refused'
-  if (m.includes('remote host closed')) return 'Remote host closed connection'
-  if (m.includes('timeout'))            return 'Connection timeout'
-  if (m.includes('unconnected') || (m.includes('none') && m.includes('unconnected'))) return 'Unconnected state — no TCP'
-  if (m.includes('add device failed'))  return 'Add device failed'
-  if (m.includes('not connected'))      return 'Not connected'
+  if (m.includes('connection refused')) return 'TCP connection refused'
+  if (m.includes('remote host closed')) return 'Remote host closed'
+  if (m.includes('timeout')) return 'Connection timeout'
+  if (m.includes('unconnected')) return 'Unconnected state'
+  if (m.includes('add device failed')) return 'Add device failed'
+  if (m.includes('not connected')) return 'Not connected'
   return 'Disconnected'
 }
+
 function disconnectAction(rds: RdsInfo): string {
   const tcp = (rds.tcpReason ?? '').toLowerCase()
   const ip = rds.serverIP ? `robot ${rds.serverIP}` : 'the robot'
-  if (tcp.includes('connection refused'))  return `Check if ${ip} is powered on and its network service is running.`
-  if (tcp.includes('remote host closed')) return `${ip} closed the connection — it may have been restarted.`
-  if (tcp.includes('timeout'))            return `Cannot reach ${ip} — check network cables or Wi-Fi range.`
-  return `Verify ${ip} is powered on and connected to the network.`
+  if (tcp.includes('connection refused')) return `Check if ${ip} is powered on and its network service is running.`
+  if (tcp.includes('remote host closed')) return `${ip} closed the connection. It may have restarted or dropped network.`
+  if (tcp.includes('timeout')) return `Cannot reach ${ip}. Check network cables, Wi-Fi, and routing from FleetManager.`
+  return `Verify ${ip} is powered on, reachable, and running its robot-side service.`
 }
 
-const CARD_BG = 'bg-gray-800 border border-gray-700'
+function eventSummary(message: string) {
+  return message.replace(/\s+/g, ' ').slice(0, 90)
+}
 
 export default function DashboardPage() {
   const nav = useNavigate()
   const [selectedDisconnect, setSelectedDisconnect] = useState<number | null>(null)
   const [syncing, setSyncing] = useState(false)
 
-  const { data: stats }            = useQuery({ queryKey: ['stats'],          queryFn: getStats,       refetchInterval: 30_000 })
-  const { data: timeline = [] }    = useQuery({ queryKey: ['timeline'],        queryFn: getTimeline,    refetchInterval: 60_000 })
-  const { data: serverStats = [] } = useQuery({ queryKey: ['server-stats'],    queryFn: getServerStats, refetchInterval: 30_000 })
-  const { data: disconnects = [] } = useQuery({ queryKey: ['logs','robot_offline'], queryFn: () => getLogs({ event_type: 'robot_offline', limit: 30 }), refetchInterval: 30_000 })
-  const { data: recent = [] }      = useQuery({ queryKey: ['logs','recent'],   queryFn: () => getLogs({ limit: 6 }), refetchInterval: 30_000 })
+  const { data: stats } = useQuery({ queryKey: ['stats'], queryFn: getStats, refetchInterval: 30_000 })
+  const { data: timeline = [] } = useQuery({ queryKey: ['timeline'], queryFn: getTimeline, refetchInterval: 60_000 })
+  const { data: serverStats = [] } = useQuery({ queryKey: ['server-stats'], queryFn: getServerStats, refetchInterval: 30_000 })
+  const { data: disconnects = [] } = useQuery({ queryKey: ['logs', 'robot_offline'], queryFn: () => getLogs({ event_type: 'robot_offline', limit: 30 }), refetchInterval: 30_000 })
+  const { data: rdsIssues = [] } = useQuery({ queryKey: ['logs', 'rds_core_issue'], queryFn: () => getLogs({ event_type: 'rds_core_issue', limit: 5 }), refetchInterval: 30_000 })
+  const { data: recent = [] } = useQuery({ queryKey: ['logs', 'recent'], queryFn: () => getLogs({ limit: 6 }), refetchInterval: 30_000 })
 
   const handleSync = useCallback(async () => {
-    setSyncing(true); try { await syncAll() } catch {} setTimeout(() => setSyncing(false), 8000)
+    setSyncing(true)
+    try {
+      await syncAll()
+    } finally {
+      window.setTimeout(() => setSyncing(false), 8000)
+    }
   }, [])
 
   const chartData = (() => {
@@ -64,111 +86,106 @@ export default function DashboardPage() {
       map[day][p.event_type] = (map[day][p.event_type] ?? 0) + p.count
     })
     return Object.entries(map).slice(-7).map(([day, counts]) => ({
-      day: day ? format(new Date(day + 'T12:00:00'), 'MMM d') : '',
-      'Robot offline': counts['robot_offline'] ?? 0,
-      Crash: counts['crash'] ?? 0,
-      Error: counts['error'] ?? 0,
+      day: day ? format(new Date(`${day}T12:00:00`), 'MMM d') : '',
+      'Robot offline': counts.robot_offline ?? 0,
+      'RDS core': counts.rds_core_issue ?? 0,
+      Crash: counts.crash ?? 0,
+      Error: counts.error ?? 0,
     }))
   })()
 
-  const eventIcons: Record<string, string> = { robot_offline:'!', robot_online:'+', crash:'x', ubuntu_server_reboot:'R', ubuntu_server_shutdown:'S', proxmox_host_reboot:'P', proxmox_host_shutdown:'P', vm_stopped:'VM', vm_started:'VM', vm_killed_by_oom:'OOM', host_memory_exhaustion:'MEM', backup_job:'B', backup_found_vm_stopped:'B', ha_action:'HA', disk_error:'D', disk_smart_issue:'D', network_dhcp_failure:'N', service_failure:'SF', ssh_login_activity:'SSH', error:'E', warning:'W', update:'U' }
-  const eventLabels: Record<string, string> = { robot_offline:'Robot offline', robot_online:'Robot online', crash:'App crash', ubuntu_server_reboot:'Ubuntu reboot', ubuntu_server_shutdown:'Ubuntu shutdown', proxmox_host_reboot:'Proxmox reboot', proxmox_host_shutdown:'Proxmox shutdown', vm_stopped:'VM stopped', vm_started:'VM started', vm_killed_by_oom:'VM killed by OOM', host_memory_exhaustion:'Host memory exhaustion', backup_job:'Backup job', backup_found_vm_stopped:'Backup found VM stopped', ha_action:'HA action', disk_error:'Disk error', disk_smart_issue:'Disk/SMART issue', network_dhcp_failure:'Network failure', service_failure:'Service failure', ssh_login_activity:'SSH login', error:'Error', warning:'Warning', update:'Update' }
+  const eventLabels: Record<string, string> = {
+    robot_offline: 'Robot offline',
+    robot_online: 'Robot online',
+    crash: 'App crash',
+    rds_core_issue: 'RDS core issue',
+    rds_map_update: 'RDS map update',
+    warlink_failure: 'WarLink / PLC',
+    vm_killed_by_oom: 'VM killed by OOM',
+    host_memory_exhaustion: 'Host memory exhaustion',
+    disk_error: 'Disk error',
+    disk_smart_issue: 'Disk/SMART issue',
+    network_dhcp_failure: 'Network failure',
+    service_failure: 'Service failure',
+    ssh_login_activity: 'SSH/login',
+    warning: 'Warning',
+    error: 'Error',
+  }
+
+  const metricCards = [
+    { Icon: Server, val: `${stats?.online_servers ?? 0}/${stats?.total_servers ?? 0}`, label: 'SERVERS ONLINE', sub: 'Server inventory and SSH health', bar: 'bg-green-500', href: '/servers' },
+    { Icon: Database, val: String(stats?.rds_core_issue_count ?? 0), label: 'RDS CORE', sub: `${stats?.rds_map_update_count ?? 0} map updates`, bar: 'bg-emerald-500', valColor: (stats?.rds_core_issue_count ?? 0) > 0 ? 'text-rose-300' : 'text-white', href: '/logs?event_type=rds_core_issue' },
+    { Icon: Radio, val: String(stats?.robot_offline_count ?? 0), label: 'ROBOT DISCONNECTS', sub: `${stats?.robot_online_count ?? 0} reconnects`, bar: 'bg-red-500', valColor: 'text-red-400', href: '/logs?event_type=robot_offline' },
+    { Icon: Network, val: String(stats?.warlink_issue_count ?? 0), label: 'WARLINK / PLC', sub: 'PLC tag and heartbeat issues', bar: 'bg-cyan-500', href: '/logs?event_type=warlink_failure' },
+    { Icon: AlertTriangle, val: String(stats?.crash_count ?? 0), label: 'APP CRASHES', sub: 'Click logs to group by application', bar: 'bg-amber-500', valColor: 'text-amber-400', href: '/logs?event_type=crash' },
+    { Icon: Shield, val: String(stats?.proxmox_event_count ?? 0), label: 'PROXMOX', sub: 'Host reboot, shutdown, HA', bar: 'bg-purple-500', href: '/logs?event_types=proxmox_host_shutdown,proxmox_host_reboot,ha_action' },
+    { Icon: AlertTriangle, val: String(stats?.memory_event_count ?? 0), label: 'OOM / MEMORY', sub: 'Host memory, swap, VM killed', bar: 'bg-red-600', valColor: 'text-red-400', href: '/logs?event_types=vm_killed_by_oom,host_memory_exhaustion,swap_full' },
+    { Icon: Activity, val: (stats?.total_events ?? 0).toLocaleString(), label: 'TOTAL EVENTS', sub: `${stats?.critical_events ?? 0} high/critical`, bar: 'bg-gray-500', href: '/logs?severity=critical' },
+  ]
 
   return (
     <div className="flex flex-col h-full bg-gray-900 text-gray-100">
-
-      {/* Top bar */}
       <div className="flex items-center justify-between px-6 py-4 bg-gray-900 border-b border-gray-700">
         <div>
           <h1 className="text-base font-semibold text-white">DRISHTI SiteOps</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Robot fleet, infrastructure health, OpsForge automation, and log intelligence — {stats?.online_servers ?? 0} servers online</p>
+          <p className="text-xs text-gray-400 mt-0.5">Operations overview across servers, robots, RDS, WarLink, Proxmox, logs, and automation</p>
         </div>
-        <button onClick={handleSync} disabled={syncing}
-          className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white border border-gray-600 transition-colors disabled:opacity-50">
+        <button onClick={handleSync} disabled={syncing} className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white border border-gray-600 transition-colors disabled:opacity-50">
           <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
-          {syncing ? 'Syncing…' : 'Sync all'}
+          {syncing ? 'Syncing...' : 'Sync all'}
         </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-5 space-y-4">
-
-        {/* Metric cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-3">
-          {[
-            { Icon: Server,        val: `${stats?.online_servers ?? 0}`, label: 'SERVERS',           sub: `${stats?.online_servers ?? 0} online  ${(stats?.total_servers ?? 0) - (stats?.online_servers ?? 0)} offline`, subColor: 'text-green-400', bar: 'bg-green-500', href: '/servers' },
-            { Icon: Radio,         val: String(stats?.robot_offline_count ?? 0), label: 'ROBOT DISCONNECTS', sub: `${stats?.robot_online_count ?? 0} connections`, subColor: 'text-red-400',   bar: 'bg-red-500',   valColor: 'text-red-400', href: '/logs?event_type=robot_offline' },
-            { Icon: AlertTriangle, val: String(stats?.crash_count ?? 0), label: 'APP CRASHES',        sub: 'All time',            subColor: 'text-gray-500', bar: 'bg-amber-500', valColor: 'text-amber-400', href: '/logs?event_type=crash' },
-            { Icon: Activity,      val: String(stats?.ubuntu_event_count ?? 0), label: 'UBUNTU EVENTS', sub: 'Reboot, shutdown, log gap, service', subColor: 'text-blue-300', bar: 'bg-blue-500', href: '/logs?event_types=ubuntu_server_shutdown,ubuntu_server_reboot,ubuntu_log_gap,service_failure,ssh_login_activity' },
-            { Icon: Shield,        val: String(stats?.proxmox_event_count ?? 0), label: 'PROXMOX HOST', sub: 'Host reboot, shutdown, HA', subColor: 'text-purple-300', bar: 'bg-purple-500', href: '/logs?event_types=proxmox_host_shutdown,proxmox_host_reboot,ha_action' },
-            { Icon: Server,        val: String(stats?.vm_event_count ?? 0), label: 'VM STOP / START', sub: 'VM state and QEMU events', subColor: 'text-sky-300', bar: 'bg-sky-500', href: '/logs?event_types=vm_stopped,vm_started,vm_reboot,vm_killed_by_oom' },
-            { Icon: AlertTriangle, val: String(stats?.memory_event_count ?? 0), label: 'OOM / MEMORY', sub: 'Host memory, swap, VM killed', subColor: 'text-red-300', bar: 'bg-red-600', valColor: 'text-red-400', href: '/logs?event_types=vm_killed_by_oom,host_memory_exhaustion,swap_full' },
-            { Icon: RefreshCw,     val: String(stats?.backup_event_count ?? 0), label: 'BACKUP EVENTS', sub: 'Backup jobs and stopped VMs', subColor: 'text-indigo-300', bar: 'bg-indigo-500', href: '/logs?event_types=backup_job,backup_found_vm_stopped' },
-            { Icon: Activity,      val: (stats?.total_events ?? 0).toLocaleString(), label: 'TOTAL EVENTS', sub: `${stats?.critical_events ?? 0} critical`, subColor: 'text-red-400',   bar: 'bg-gray-500', href: '/logs?severity=critical' },
-          ].map(c => (
-            <button key={c.label} onClick={() => nav(c.href)}
-              className={`${CARD_BG} rounded-xl p-4 relative overflow-hidden text-left transition-colors hover:bg-gray-700/70 hover:border-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/60`}>
-              <c.Icon size={18} className="text-gray-400 mb-3" />
-              <div className={`text-2xl font-semibold ${c.valColor ?? 'text-white'}`}>{c.val}</div>
-              <div className="text-xs font-medium text-gray-400 mt-1 tracking-wider">{c.label}</div>
-              <div className={`text-xs mt-1 ${c.subColor}`}>{c.sub}</div>
+        <div className="grid grid-cols-1 md:grid-cols-4 xl:grid-cols-8 gap-3">
+          {metricCards.map(c => (
+            <button key={c.label} onClick={() => nav(c.href)} className={`${CARD_BG} rounded-lg p-3 relative overflow-hidden text-left transition-colors hover:bg-gray-700/70 hover:border-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/60`}>
+              <c.Icon size={16} className="text-gray-400 mb-2" />
+              <div className={`text-xl font-semibold ${c.valColor ?? 'text-white'}`}>{c.val}</div>
+              <div className="text-[11px] font-medium text-gray-400 mt-1 tracking-wide">{c.label}</div>
+              <div className="text-[11px] mt-1 text-gray-500 leading-4">{c.sub}</div>
               <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${c.bar}`} />
             </button>
           ))}
         </div>
 
-        {/* Mid: Robot disconnects + Server cards */}
-        <div className="grid grid-cols-5 gap-3">
-
-          {/* Robot disconnections */}
-          <div className={`col-span-3 ${CARD_BG} rounded-xl p-4`}>
+        <div className="grid grid-cols-1 xl:grid-cols-5 gap-3">
+          <div className={`xl:col-span-2 ${CARD_BG} rounded-lg p-4`}>
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-                <Radio size={15} className="text-gray-400" /> Robot disconnections
-              </h2>
-              <div className="flex items-center gap-3">
-                <span className="text-xs bg-red-900/50 text-red-300 border border-red-700 px-2 py-0.5 rounded-full">{disconnects.length} events</span>
-                <button onClick={() => nav('/logs?event_type=robot_offline')} className="text-xs text-indigo-400 hover:text-indigo-300">View all 70 in Logs →</button>
-              </div>
+              <h2 className="text-sm font-semibold text-white flex items-center gap-2"><Radio size={15} className="text-gray-400" /> Robot disconnections</h2>
+              <button onClick={() => nav('/logs?event_type=robot_offline')} className="text-xs text-indigo-400 hover:text-indigo-300">{disconnects.length} events</button>
             </div>
-            <div className="space-y-1.5 max-h-64 overflow-y-auto">
+            <div className="space-y-1 max-h-52 overflow-y-auto">
               {disconnects.length === 0 && <p className="text-sm text-gray-500 text-center py-6">No disconnections recorded</p>}
               {disconnects.map(ev => {
                 const rds = parseRds(ev.message)
                 const label = disconnectLabel(ev.message)
                 const isOpen = selectedDisconnect === ev.id
                 const isRed = label.includes('refused') || label.includes('closed') || label.includes('timeout')
-                const dotColor = isRed ? 'bg-red-500' : 'bg-amber-400'
-                const badgeColor = isRed ? 'text-red-300 bg-red-900/40 border-red-700' : 'text-amber-300 bg-amber-900/40 border-amber-700'
                 return (
                   <div key={ev.id}>
-                    <button onClick={() => setSelectedDisconnect(isOpen ? null : ev.id)}
-                      className={`w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all ${isOpen ? 'border-indigo-500 bg-indigo-900/30' : 'border-gray-700 hover:border-gray-600 hover:bg-gray-750'}`}>
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dotColor}`} />
-                      <span className="font-mono text-xs font-semibold text-gray-200 w-28 flex-shrink-0">{rds.serverIP ?? '—'}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full border font-medium flex-1 text-left ${badgeColor}`}>{label}</span>
+                    <button onClick={() => setSelectedDisconnect(isOpen ? null : ev.id)} className={`w-full text-left flex items-center gap-2 px-2.5 py-1.5 rounded-md border transition-all ${isOpen ? 'border-indigo-500 bg-indigo-900/30' : 'border-gray-700 hover:border-gray-600 hover:bg-gray-750'}`}>
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isRed ? 'bg-red-500' : 'bg-amber-400'}`} />
+                      <span className="font-mono text-xs font-semibold text-gray-200 w-24 flex-shrink-0">{rds.serverIP ?? '-'}</span>
+                      <span className={`text-[11px] px-2 py-0.5 rounded-md border font-medium flex-1 text-left truncate ${isRed ? 'text-red-300 bg-red-900/40 border-red-700' : 'text-amber-300 bg-amber-900/40 border-amber-700'}`}>{label}</span>
                       <span className="text-xs text-gray-500 flex-shrink-0">{safeTime(ev.timestamp)}</span>
-                      <span className="text-gray-600 text-xs flex-shrink-0">{isOpen ? '▲' : '▼'}</span>
                     </button>
                     {isOpen && (
-                      <div className="mx-2 mb-1 rounded-lg border border-indigo-700 bg-gray-900 p-3 space-y-2">
-                        <p className="text-sm text-gray-200 font-medium">{disconnectAction(rds)}</p>
+                      <div className="mx-2 mb-1 rounded-lg border border-indigo-700 bg-gray-900 p-2.5 space-y-2">
+                        <p className="text-xs text-gray-200 font-medium">{disconnectAction(rds)}</p>
                         <div className="grid grid-cols-4 gap-2">
                           {[
-                            { label: 'Robot IP',   val: rds.serverIP ?? '—' },
-                            { label: 'Port',        val: rds.serverPort ?? '—' },
-                            { label: 'TCP reason',  val: rds.tcpReason ?? '—' },
-                            { label: 'State',       val: rds.socketState?.replace('State','') ?? '—' },
+                            { label: 'Robot IP', val: rds.serverIP ?? '-' },
+                            { label: 'Port', val: rds.serverPort ?? '-' },
+                            { label: 'TCP reason', val: rds.tcpReason ?? '-' },
+                            { label: 'State', val: rds.socketState?.replace('State', '') ?? '-' },
                           ].map(f => (
-                            <div key={f.label} className="bg-gray-800 border border-gray-700 rounded-lg p-2 text-center">
-                              <div className="text-xs text-gray-500 mb-0.5">{f.label}</div>
+                            <div key={f.label} className="bg-gray-800 border border-gray-700 rounded-md p-2 text-center">
+                              <div className="text-[10px] text-gray-500 mb-0.5">{f.label}</div>
                               <div className="text-xs font-semibold text-gray-200 font-mono truncate">{f.val}</div>
                             </div>
                           ))}
                         </div>
-                        <button onClick={() => nav(`/logs?event_type=robot_offline&server_id=${ev.server_id}`)}
-                          className="text-xs text-indigo-400 hover:text-indigo-300 bg-indigo-900/30 hover:bg-indigo-900/50 px-3 py-1.5 rounded-lg transition-colors border border-indigo-700">
-                          View all for {ev.server_name} →
-                        </button>
                       </div>
                     )}
                   </div>
@@ -177,54 +194,62 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Server cards */}
-          <div className="col-span-2 space-y-3">
-            <div className={`${CARD_BG} rounded-xl p-3`}>
-              <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-3">
-                <Server size={14} className="text-gray-400" /> Servers
-              </h2>
-              <div className="space-y-2">
-                {serverStats.map((s: any) => (
-                  <button key={s.id} onClick={() => nav(`/logs?server_id=${s.id}`)}
-                    className="w-full text-left bg-gray-900 border border-gray-700 hover:border-gray-600 rounded-lg p-3 transition-colors">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={`w-2 h-2 rounded-full ${s.status === 'online' ? 'bg-green-500' : 'bg-gray-500'}`} />
-                      <span className="text-sm font-medium text-gray-200 truncate">{s.name}</span>
-                      <span className={`ml-auto text-xs px-2 py-0.5 rounded-full font-medium ${s.status === 'online' ? 'bg-green-900/50 text-green-400 border border-green-700' : 'bg-gray-700 text-gray-400'}`}>{s.status === 'online' ? 'Online' : 'Offline'}</span>
-                    </div>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      <div className="text-center">
-                        <div className={`text-sm font-bold ${s.robot_offline > 0 ? 'text-red-400' : 'text-gray-500'}`}>{s.robot_offline}</div>
-                        <div className="text-xs text-gray-500 leading-tight">🤖 Robot<br/>Offline</div>
+          <div className={`xl:col-span-2 ${CARD_BG} rounded-lg p-4`}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-white flex items-center gap-2"><Server size={15} className="text-gray-400" /> Server health</h2>
+              <button onClick={() => nav('/servers')} className="text-xs text-indigo-400 hover:text-indigo-300">Manage servers</button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-72 overflow-y-auto">
+              {serverStats.map((s: any) => (
+                <button key={s.id} onClick={() => nav(`/logs?server_id=${s.id}`)} className="text-left bg-gray-900 border border-gray-700 hover:border-gray-600 rounded-lg p-3 transition-colors">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={`w-2 h-2 rounded-full ${s.status === 'online' ? 'bg-green-500' : 'bg-gray-500'}`} />
+                    <span className="text-sm font-medium text-gray-200 truncate">{s.name}</span>
+                    <span className={`ml-auto text-[10px] px-2 py-0.5 rounded-full font-medium ${s.status === 'online' ? 'bg-green-900/50 text-green-400 border border-green-700' : 'bg-gray-700 text-gray-400'}`}>{s.status === 'online' ? 'Online' : 'Offline'}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {[
+                      { label: 'Robot', value: s.robot_offline, tone: s.robot_offline > 0 ? 'text-red-400' : 'text-gray-500' },
+                      { label: 'RDS', value: s.rds_core_issues ?? 0, tone: (s.rds_core_issues ?? 0) > 0 ? 'text-rose-300' : 'text-gray-500' },
+                      { label: 'Crash', value: s.crashes, tone: s.crashes > 0 ? 'text-amber-400' : 'text-gray-500' },
+                      { label: 'WarLink', value: s.warlink_issues ?? 0, tone: (s.warlink_issues ?? 0) > 0 ? 'text-cyan-300' : 'text-gray-500' },
+                      { label: 'Errors', value: s.errors, tone: s.errors > 0 ? 'text-orange-400' : 'text-gray-500' },
+                      { label: 'Disk', value: s.disk_errors > 0 ? s.disk_errors : 'ok', tone: s.disk_errors > 0 ? 'text-yellow-400' : 'text-green-400' },
+                    ].map(item => (
+                      <div key={item.label} className="bg-gray-950/60 border border-gray-800 rounded-md px-2 py-1.5 text-center">
+                        <div className={`text-xs font-bold ${item.tone}`}>{item.value}</div>
+                        <div className="text-[10px] text-gray-600">{item.label}</div>
                       </div>
-                      <div className="text-center">
-                        <div className={`text-sm font-bold ${s.errors > 0 ? 'text-orange-400' : 'text-gray-500'}`}>{s.errors}</div>
-                        <div className="text-xs text-gray-500 leading-tight">❌ System<br/>Errors</div>
-                      </div>
-                      <div className="text-center">
-                        <div className={`text-sm font-bold ${s.crashes > 0 ? 'text-amber-400' : 'text-gray-500'}`}>{s.crashes}</div>
-                        <div className="text-xs text-gray-500 leading-tight">💥 App<br/>Crashes</div>
-                      </div>
-                      <div className="text-center">
-                        <div className={`text-sm font-bold ${s.disk_errors > 0 ? 'text-yellow-400' : 'text-green-400'}`}>{s.disk_errors > 0 ? s.disk_errors : 'ok'}</div>
-                        <div className="text-xs text-gray-500 leading-tight">💾 Disk<br/>Status</div>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
+                    ))}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className={`${CARD_BG} rounded-lg p-4`}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-white flex items-center gap-2"><Database size={15} className="text-gray-400" /> RDS issues</h2>
+              <button onClick={() => nav('/logs?event_type=rds_core_issue')} className="text-xs text-indigo-400 hover:text-indigo-300">Open</button>
+            </div>
+            <div className="space-y-2">
+              {rdsIssues.length === 0 && <p className="text-xs text-gray-500">No RDS core issues found.</p>}
+              {rdsIssues.map(ev => (
+                <button key={ev.id} onClick={() => nav(`/logs?event_type=rds_core_issue&server_id=${ev.server_id}`)} className="w-full text-left border-l-2 border-l-rose-400 pl-3 py-1.5 hover:bg-gray-700/50 rounded-r transition-colors">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-gray-300 truncate">{ev.server_name}</span>
+                    <span className="text-xs text-gray-500 ml-auto">{safeTime(ev.timestamp)}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5 truncate">{eventSummary(ev.plain_english || ev.message)}</p>
+                </button>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Chart + Recent + System health */}
-        <div className="grid grid-cols-3 gap-3">
-
-          {/* Chart */}
-          <div className={`col-span-2 ${CARD_BG} rounded-xl p-4`}>
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold text-white flex items-center gap-2"><Activity size={14} className="text-gray-400" /> Event trend — last 7 days</h2>
-            </div>
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+          <div className={`xl:col-span-2 ${CARD_BG} rounded-lg p-4`}>
+            <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-3"><Activity size={14} className="text-gray-400" /> Event trend - last 7 days</h2>
             {chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height={160}>
                 <BarChart data={chartData} barSize={10} barGap={2}>
@@ -232,45 +257,40 @@ export default function DashboardPage() {
                   <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} width={24} allowDecimals={false} />
                   <Tooltip contentStyle={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 8, fontSize: 11, color: '#f9fafb' }} />
                   <Legend wrapperStyle={{ fontSize: 11, color: '#9ca3af' }} />
-                  <Bar dataKey="Robot offline" fill="#ef4444" radius={[3,3,0,0]} />
-                  <Bar dataKey="Crash"         fill="#f59e0b" radius={[3,3,0,0]} />
-                  <Bar dataKey="Error"         fill="#6366f1" radius={[3,3,0,0]} />
+                  <Bar dataKey="Robot offline" fill="#ef4444" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="RDS core" fill="#fb7185" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="Crash" fill="#f59e0b" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="Error" fill="#6366f1" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex items-center justify-center h-40 text-gray-600 text-sm">No data yet — run Sync All</div>
+              <div className="flex items-center justify-center h-40 text-gray-600 text-sm">No data yet - run Sync All</div>
             )}
           </div>
 
-          {/* Recent events + System health stacked */}
           <div className="space-y-3">
-            <div className={`${CARD_BG} rounded-xl p-4`}>
+            <div className={`${CARD_BG} rounded-lg p-4`}>
               <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-3"><Bell size={14} className="text-gray-400" /> Recent events</h2>
               <div className="space-y-2">
-                {recent.slice(0, 3).map(ev => {
-                  const borderColors: Record<string,string> = { robot_offline:'border-l-red-500', robot_online:'border-l-green-500', crash:'border-l-amber-500', disk_error:'border-l-yellow-500', error:'border-l-orange-500', warning:'border-l-yellow-400' }
-                  return (
-                    <button key={ev.id} onClick={() => nav(`/logs?event_type=${ev.event_type}`)}
-                      className={`w-full text-left pl-3 border-l-2 ${borderColors[ev.event_type] ?? 'border-l-gray-600'} py-1.5 hover:bg-gray-700/50 rounded-r transition-colors`}>
-                      <div className="flex items-center gap-1">
-                        <span className="text-sm">{eventIcons[ev.event_type] ?? '•'}</span>
-                        <span className="text-xs font-semibold text-gray-300 truncate max-w-28">{ev.server_name?.split(' ')[0]}</span>
-                        <span className="text-xs text-gray-500 ml-auto">{safeTime(ev.timestamp)}</span>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-0.5 truncate">{eventLabels[ev.event_type]} — {ev.message.slice(0,40)}</p>
-                    </button>
-                  )
-                })}
+                {recent.slice(0, 4).map(ev => (
+                  <button key={ev.id} onClick={() => nav(`/logs?event_type=${ev.event_type}`)} className="w-full text-left pl-3 border-l-2 border-l-gray-600 py-1.5 hover:bg-gray-700/50 rounded-r transition-colors">
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs font-semibold text-gray-300 truncate max-w-28">{ev.server_name?.split(' ')[0]}</span>
+                      <span className="text-xs text-gray-500 ml-auto">{safeTime(ev.timestamp)}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5 truncate">{eventLabels[ev.event_type] ?? ev.event_type} - {eventSummary(ev.message)}</p>
+                  </button>
+                ))}
               </div>
             </div>
 
-            <div className={`${CARD_BG} rounded-xl p-4`}>
+            <div className={`${CARD_BG} rounded-lg p-4`}>
               <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-3"><Shield size={14} className="text-gray-400" /> System health</h2>
               <div className="space-y-2">
                 {[
-                  { icon: CheckCircle, label: 'Disk — all servers', detail: 'No disk errors detected', ok: (stats?.disk_error_count ?? 0) === 0 },
-                  { icon: CheckCircle, label: 'Memory — all servers', detail: 'No OOM events in 7 days', ok: true },
-                  { icon: AlertTriangle, label: 'Robot connectivity', detail: `${stats?.robot_offline_count ?? 0} disconnects recorded`, ok: (stats?.robot_offline_count ?? 0) === 0 },
+                  { icon: CheckCircle, label: 'Disk - all servers', detail: `${stats?.disk_error_count ?? 0} disk errors`, ok: (stats?.disk_error_count ?? 0) === 0 },
+                  { icon: Database, label: 'RDS core', detail: `${stats?.rds_core_issue_count ?? 0} RDS issues`, ok: (stats?.rds_core_issue_count ?? 0) === 0 },
+                  { icon: Radio, label: 'Robot connectivity', detail: `${stats?.robot_offline_count ?? 0} disconnects`, ok: (stats?.robot_offline_count ?? 0) === 0 },
                 ].map(item => (
                   <div key={item.label} className="flex items-start gap-2">
                     <item.icon size={14} className={`mt-0.5 flex-shrink-0 ${item.ok ? 'text-green-500' : 'text-amber-400'}`} />

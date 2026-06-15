@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { format, parseISO, isValid } from 'date-fns'
 import { clsx } from 'clsx'
 import { ChevronDown, ChevronRight, Eye, EyeOff } from 'lucide-react'
@@ -208,6 +209,53 @@ function cleanMessage(raw: string): string {
   return stripAnsi(parsed ? parsed.body : raw.trim())
 }
 
+function applicationName(ev: LogEvent): string {
+  const raw = fullMessage(ev)
+  const parsed = parseRawLog(raw)
+  const process = parsed?.process?.replace(/\[\d+\]$/, '').replace(/:$/, '')
+  if (process && process !== '-' && !process.includes('/')) return normalizeAppName(process)
+
+  const source = ev.source.toLowerCase()
+  const lower = raw.toLowerCase()
+  const known: Array<[string, string]> = [
+    ['falcon-sensor', 'FalconSensor'],
+    ['falconsensor', 'FalconSensor'],
+    ['warlink', 'WarLink'],
+    ['shingo-edge', 'shingo-edge'],
+    ['rdscore', 'rdscore'],
+    ['roboshop', 'RoboShop'],
+    ['robod', 'robod'],
+    ['fleetmanager', 'FleetManager'],
+    ['pveproxy', 'pveproxy'],
+    ['pvedaemon', 'pvedaemon'],
+    ['qemu', 'QEMU/KVM'],
+    ['kvm', 'QEMU/KVM'],
+    ['postgres', 'PostgreSQL'],
+    ['mysql', 'MySQL'],
+    ['nginx', 'nginx'],
+    ['sshd', 'sshd'],
+    ['systemd', 'systemd'],
+    ['kernel', 'kernel'],
+  ]
+  for (const [needle, label] of known) {
+    if (lower.includes(needle) || source.includes(needle)) return label
+  }
+  if (source.includes('rds')) return 'RDS'
+  if (source.includes('proxmox')) return 'Proxmox'
+  if (source.includes('journald')) return 'system journal'
+  return '-'
+}
+
+function normalizeAppName(value: string): string {
+  const lower = value.toLowerCase()
+  if (lower.includes('falcon')) return 'FalconSensor'
+  if (lower.includes('warlink')) return 'WarLink'
+  if (lower.includes('rdscore')) return 'rdscore'
+  if (lower.includes('roboshop')) return 'RoboShop'
+  if (lower.includes('qemu') || lower.includes('kvm')) return 'QEMU/KVM'
+  return value
+}
+
 function explainMessage(ev: LogEvent): string {
   if (ev.plain_english) return ev.plain_english
   const raw = fullMessage(ev)
@@ -226,6 +274,14 @@ function explainMessage(ev: LogEvent): string {
     if (map.mac) parts.push(`with MAC ${map.mac}`)
     if (map.map) parts.push(`for map ${map.map}`)
     return `${parts.join(' ')}.`
+  }
+  if (ev.event_type === 'rds_core_issue') {
+    if (message.includes('database') || message.includes('mysql') || message.includes('postgres')) return 'RDS appears to be having database trouble.'
+    if (message.includes('timeout') || message.includes('timed out')) return 'RDS operation timed out.'
+    if (message.includes('returned 500') || message.includes('api')) return 'RDS API returned an error.'
+    if (message.includes('not connected') || message.includes('connection refused') || message.includes('disconnect')) return 'RDS lost or could not establish a connection.'
+    if (message.includes('fatal') || message.includes('panic') || message.includes('core dumped')) return 'RDS application process crashed or hit a fatal error.'
+    return 'RDS core logged an application, API, database, timeout, service, or connection issue.'
   }
   if (ev.event_type === 'warlink_failure') {
     const warlink = parseWarLinkLog(raw)
@@ -287,6 +343,9 @@ function suggestAction(ev: LogEvent): string | null {
     if (map.status === 'failed' || map.status === 'broken') return 'Review the RDS map update result, confirm which user/IP pushed it, and verify robots can load or use the updated map.'
     return 'Reference only: confirm the user/IP was expected and verify robot behavior after the map update.'
   }
+  if (ev.event_type === 'rds_core_issue') {
+    return 'Check rdscore/RDS service status, recent RDS application logs, database connectivity, disk space, and API health. Keep the raw log for engineering or vendor review.'
+  }
   if (ev.event_type === 'warlink_failure') {
     return 'Most likely reason: WarLink does not currently have an established PLC connection. Check PLC power/network reachability from Springfield Edge, shingo-edge/WarLink service connection state, and the affected PLC route/tag before restarting the service.'
   }
@@ -337,6 +396,14 @@ function friendlySummary(ev: LogEvent): string {
       map.map ? `(${map.map})` : null,
     ].filter(Boolean).join(' ')
   }
+  if (ev.event_type === 'rds_core_issue') {
+    const app = applicationName(ev)
+    if (messageContains(raw, 'database', 'mysql', 'postgres')) return `${app} database issue`
+    if (messageContains(raw, 'timeout', 'timed out')) return `${app} timeout`
+    if (messageContains(raw, 'returned 500', 'api')) return `${app} API error`
+    if (messageContains(raw, 'not connected', 'connection refused', 'disconnect')) return `${app} connection issue`
+    return `${app} core issue`
+  }
   if (ev.event_type === 'warlink_failure') {
     const warlink = parseWarLinkLog(raw)
     return [
@@ -361,6 +428,11 @@ function friendlySummary(ev: LogEvent): string {
   return cleanMessage(raw)
 }
 
+function messageContains(raw: string, ...needles: string[]): boolean {
+  const lower = raw.toLowerCase()
+  return needles.some(needle => lower.includes(needle))
+}
+
 function fmtGB(value?: number): string {
   return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(2)} GB` : '-'
 }
@@ -377,6 +449,7 @@ function vmLabel(vmid?: string, name?: string): string {
 export default function LogsTable({ events, loading }: Props) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [showRawSummary, setShowRaw] = useState(false)
+  const navigate = useNavigate()
 
   function toggle(id: number) {
     setExpanded(prev => {
@@ -397,6 +470,7 @@ export default function LogsTable({ events, loading }: Props) {
           <col className="w-32" />
           <col className="w-40" />
           <col className="w-44" />
+          <col className="w-36" />
           <col className="w-28" />
           <col />
         </colgroup>
@@ -406,6 +480,7 @@ export default function LogsTable({ events, loading }: Props) {
             <th className="py-3 pr-4 font-medium">When</th>
             <th className="py-3 pr-4 font-medium">Server</th>
             <th className="py-3 pr-4 font-medium">Category</th>
+            <th className="py-3 pr-4 font-medium">Application</th>
             <th className="py-3 pr-4 font-medium">Severity</th>
             <th className="py-3 font-medium">
               <div className="flex items-center gap-2">
@@ -435,6 +510,7 @@ export default function LogsTable({ events, loading }: Props) {
             const oom = access ? null : ev.oom_analysis
             const severityLabel = access ? 'reference' : ev.severity
             const severityClass = access ? SEVERITY_CLASS.low : SEVERITY_CLASS[ev.severity] ?? SEVERITY_CLASS.low
+            const app = applicationName(ev)
 
             return [
               <tr
@@ -455,6 +531,22 @@ export default function LogsTable({ events, loading }: Props) {
                   </span>
                 </td>
                 <td className="py-2.5 pr-4">
+                  {app !== '-' ? (
+                    <button
+                      onClick={e => {
+                        e.stopPropagation()
+                        navigate(`/logs?q=${encodeURIComponent(app)}${ev.event_type === 'crash' ? '&event_type=crash' : ''}`)
+                      }}
+                      title={`Filter logs for ${app}`}
+                      className="text-xs px-2 py-0.5 rounded-md border border-gray-600 bg-gray-950 text-blue-300 hover:border-blue-500 hover:text-blue-200 max-w-full truncate"
+                    >
+                      {app}
+                    </button>
+                  ) : (
+                    <span className="text-xs text-gray-600">-</span>
+                  )}
+                </td>
+                <td className="py-2.5 pr-4">
                   <span className={clsx('text-xs px-2 py-0.5 rounded-md font-medium whitespace-nowrap capitalize', severityClass)}>
                     {severityLabel}
                   </span>
@@ -469,7 +561,7 @@ export default function LogsTable({ events, loading }: Props) {
 
               isOpen ? (
                 <tr key={`detail-${ev.id}`} className={clsx('border-b border-gray-700', meta.row)}>
-                  <td colSpan={6} className="px-4 pb-4 pt-1">
+                  <td colSpan={7} className="px-4 pb-4 pt-1">
                     <div className="space-y-3">
                       <div className="bg-gray-900 border border-gray-700 rounded-lg p-4">
                         <p className="text-sm font-semibold text-white mb-1">{explainMessage(ev)}</p>
@@ -615,6 +707,7 @@ export default function LogsTable({ events, loading }: Props) {
                               <tr><td className="px-3 py-2 font-medium text-gray-400 w-32">Time</td><td className="px-3 py-2 font-mono text-gray-200">{safeFormat(ev.timestamp, 'MMM d, yyyy h:mm:ss a')}</td></tr>
                               <tr><td className="px-3 py-2 font-medium text-gray-400">Server</td><td className="px-3 py-2 text-gray-200">{ev.server_name}</td></tr>
                               <tr><td className="px-3 py-2 font-medium text-gray-400">Category</td><td className="px-3 py-2 text-gray-200">{meta.label}</td></tr>
+                              <tr><td className="px-3 py-2 font-medium text-gray-400">Application</td><td className="px-3 py-2 text-gray-200">{app}</td></tr>
                               <tr><td className="px-3 py-2 font-medium text-gray-400">Source</td><td className="px-3 py-2 text-gray-200">{sourceLabel(ev.source)}</td></tr>
                               {parsed?.host && <tr><td className="px-3 py-2 font-medium text-gray-400">Hostname</td><td className="px-3 py-2 font-mono text-gray-200">{parsed.host}</td></tr>}
                               {parsed?.process && <tr><td className="px-3 py-2 font-medium text-gray-400">Process</td><td className="px-3 py-2 font-mono text-gray-200">{parsed.process}</td></tr>}

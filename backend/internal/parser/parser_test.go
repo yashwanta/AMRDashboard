@@ -93,6 +93,13 @@ func TestParseLineLogReviewCategories(t *testing.T) {
 			severity:  "high",
 		},
 		{
+			name:      "rds core issue",
+			line:      `2026-06-15T10:12:12Z rdscore[912]: API returned 500 while saving robot state: database timeout`,
+			source:    "rds_file_logs",
+			eventType: "rds_core_issue",
+			severity:  "high",
+		},
+		{
 			name:      "warlink plc write failure",
 			line:      `2026-06-15T10:31:52-05:00 ITPI shingo-edge[2387]: outage_log.go:73: countgroup: heartbeat write to PLC Battery (deadman will trip if sustained) still failing for 1h8m36s (4111 attempts): WarLink POST Battery/write tag=Shingo_Alive returned 500: WriteTag: SendUnitDataTransaction: SendUnitDataTransaction: not connected`,
 			source:    "journald_amr",
