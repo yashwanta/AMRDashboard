@@ -82,3 +82,27 @@ func TestAMREvidenceClassification(t *testing.T) {
 		})
 	}
 }
+
+func TestEnrichLogEventNormalizesAdminSearchBeforeUI(t *testing.T) {
+	ev := models.LogEvent{
+		EventType: "battery_error",
+		Severity:  "high",
+		Source:    "auth.log",
+		RawLine:   `fleetmanager : PWD=/home/fleetmanager ; USER=root ; COMMAND=/usr/bin/bash -c 'grep -hE '2026-06-11' /opt/Roboshop/bin/location/appInfo/log/Roboshop_*.log 2>/dev/null | grep -iE 'AMR-0[2-7]|vehicle|model|config|setParams|restore|default' | grep -ivE 'status|battery|position' | head -40'`,
+	}
+
+	enrichLogEvent(&ev)
+
+	if ev.EventType != "admin_evidence_search" {
+		t.Fatalf("EventType = %q, want admin_evidence_search", ev.EventType)
+	}
+	if ev.Severity != "low" {
+		t.Fatalf("Severity = %q, want low", ev.Severity)
+	}
+	if ev.EvidenceClass != "admin_evidence_search" || ev.EvidenceConfidence != "low" {
+		t.Fatalf("evidence = %q/%q, want admin_evidence_search/low", ev.EvidenceClass, ev.EvidenceConfidence)
+	}
+	if ev.ExecutionEvidence == nil || *ev.ExecutionEvidence {
+		t.Fatalf("ExecutionEvidence = %#v, want false", ev.ExecutionEvidence)
+	}
+}

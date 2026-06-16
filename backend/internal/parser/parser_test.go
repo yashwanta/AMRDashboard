@@ -191,6 +191,13 @@ func TestParseLineLogReviewCategories(t *testing.T) {
 			severity:  "low",
 		},
 		{
+			name:      "admin bash grep pipeline ignores excluded battery keyword",
+			line:      `fleetmanager : PWD=/home/fleetmanager ; USER=root ; COMMAND=/usr/bin/bash -c 'grep -hE '2026-06-11' /opt/Roboshop/bin/location/appInfo/log/Roboshop_*.log 2>/dev/null | grep -iE 'AMR-0[2-7]|vehicle|model|config|setParams|restore|default' | grep -ivE 'status|battery|position' | head -40'`,
+			source:    "auth.log",
+			eventType: "admin_evidence_search",
+			severity:  "low",
+		},
+		{
 			name:      "sudo process grep without command field",
 			line:      `Jun 15 11:33:02 host sudo[1236]: grep -RniE "battery|charge|dock|reset|default|config" /opt/Roboshop`,
 			source:    "auth.log",
@@ -203,6 +210,20 @@ func TestParseLineLogReviewCategories(t *testing.T) {
 			source:    "rds_file_logs",
 			eventType: "template_code_reference",
 			severity:  "low",
+		},
+		{
+			name:      "real runtime gotarget still classifies",
+			line:      `/opt/.data/robod/appInfo/log/robod.log:2026-06-15 Robod Client To Server: 函数:[robot_task_gotarget_req] {"id":"PP66"}`,
+			source:    "rds_file_logs",
+			eventType: "amr_gotarget_station",
+			severity:  "medium",
+		},
+		{
+			name:      "real runtime upgrade still classifies",
+			line:      `/opt/.data/rds/logs/rds.log:2026-06-15 Roboshop.desktop Send:[2451]robot_core_upgrade_robot_req upgrade.zip`,
+			source:    "rds_file_logs",
+			eventType: "rds_upgrade_reset",
+			severity:  "medium",
 		},
 	}
 

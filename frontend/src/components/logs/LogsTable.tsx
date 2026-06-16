@@ -329,6 +329,7 @@ function cleanMessage(raw: string): string {
 }
 
 function applicationName(ev: LogEvent): string {
+  if (ev.event_type === 'admin_evidence_search' || ev.evidence_class === 'admin_evidence_search') return 'sudo'
   const raw = fullMessage(ev)
   const parsed = parseRawLog(raw)
   const process = parsed?.process?.replace(/\[\d+\]$/, '').replace(/:$/, '')

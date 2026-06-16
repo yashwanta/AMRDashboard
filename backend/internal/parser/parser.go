@@ -557,7 +557,12 @@ func isAdminEvidenceSearch(line string) bool {
 		(strings.Contains(line, "command=/bin/bash") && hasAny(line, " grep ", "'grep", "\"grep", " journalctl ", "'journalctl", "\"journalctl")) ||
 		(strings.Contains(line, "sudo") && hasAny(line, " grep ", "'grep", "\"grep", " journalctl ", "'journalctl", "\"journalctl")) ||
 		(strings.Contains(line, "sudo[") && hasAny(line, "grep", "journalctl")) ||
-		hasAny(line, "journalctl ", " grep ", " egrep ", " zgrep ")
+		hasAny(line,
+			"journalctl ", "journalctl --since",
+			" grep ", " egrep ", " zgrep ",
+			"grep -r", "grep -h", "grep -i", "grep -e",
+			"grep -ie", "grep -he", "grep -iv", "grep -rni",
+		)
 }
 
 func isTemplateCodeReference(line string) bool {

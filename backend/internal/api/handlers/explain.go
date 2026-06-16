@@ -57,6 +57,7 @@ func enrichLogEvent(ev *models.LogEvent) {
 	if ev == nil {
 		return
 	}
+	normalizeEvidenceEventType(ev)
 	ev.PlainEnglish = PlainEnglishLog(*ev)
 	ev.RecommendedAction = RecommendedAction(*ev)
 	class, confidence, badges, targets := AMREvidenceClassification(*ev)
@@ -67,6 +68,23 @@ func enrichLogEvent(ev *models.LogEvent) {
 	if class != "" {
 		executed := class == "executed_command"
 		ev.ExecutionEvidence = &executed
+	}
+}
+
+func normalizeEvidenceEventType(ev *models.LogEvent) {
+	raw := strings.TrimSpace(ev.RawLine)
+	if raw == "" {
+		raw = strings.TrimSpace(ev.Message)
+	}
+	lower := strings.ToLower(raw)
+	if isAdminEvidenceOnly(lower) {
+		ev.EventType = "admin_evidence_search"
+		ev.Severity = "low"
+		return
+	}
+	if isTemplateOrCodeOnly(lower) {
+		ev.EventType = "template_code_reference"
+		ev.Severity = "low"
 	}
 }
 
@@ -509,7 +527,7 @@ func amrRDSPlainEnglish(ev models.LogEvent, raw string) string {
 	case "rds_scene_map_error":
 		return "RDS scene/map upload or validation error evidence was found." + confText
 	case "admin_evidence_search":
-		return "An administrator searched logs for evidence; this does not mean the robot command actually ran."
+		return "This row is an administrator log search command. It is useful for investigation history, but it is not evidence that the robot executed a battery, charge, dock, go-target, reset, or default command."
 	case "template_code_reference":
 		return "A template, source-code, or config file matched the keyword; this is reference evidence only, not robot execution."
 	case "not_execution_evidence":
@@ -584,7 +602,12 @@ func isAdminEvidenceOnly(lower string) bool {
 		(strings.Contains(lower, "command=/bin/bash") && hasAnyLocal(lower, " grep ", "'grep", "\"grep", " journalctl ", "'journalctl", "\"journalctl")) ||
 		(strings.Contains(lower, "sudo") && hasAnyLocal(lower, " grep ", "'grep", "\"grep", " journalctl ", "'journalctl", "\"journalctl")) ||
 		(strings.Contains(lower, "sudo[") && hasAnyLocal(lower, "grep", "journalctl")) ||
-		hasAnyLocal(lower, "journalctl ", " grep ", " egrep ", " zgrep ")
+		hasAnyLocal(lower,
+			"journalctl ", "journalctl --since",
+			" grep ", " egrep ", " zgrep ",
+			"grep -r", "grep -h", "grep -i", "grep -e",
+			"grep -ie", "grep -he", "grep -iv", "grep -rni",
+		)
 }
 
 func isTemplateOrCodeOnly(lower string) bool {
