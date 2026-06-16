@@ -2,9 +2,8 @@ import { useCallback, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { format, isValid, parseISO } from 'date-fns'
-import { Bar, BarChart, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Activity, AlertTriangle, Bell, CheckCircle, Database, Network, Radio, RefreshCw, Server, Shield } from 'lucide-react'
-import { getLogs, getServerStats, getStats, getTimeline, syncAll } from '../api/client'
+import { getLogs, getServerStats, getStats, syncAll } from '../api/client'
 
 const CARD_BG = 'bg-gray-800 border border-gray-700'
 
@@ -66,18 +65,16 @@ export default function DashboardPage() {
   const [syncError, setSyncError] = useState('')
 
   const { data: stats } = useQuery({ queryKey: ['stats'], queryFn: getStats, refetchInterval: 30_000 })
-  const { data: timeline = [] } = useQuery({ queryKey: ['timeline'], queryFn: getTimeline, refetchInterval: 60_000 })
   const { data: serverStats = [] } = useQuery({ queryKey: ['server-stats'], queryFn: getServerStats, refetchInterval: 30_000 })
   const { data: disconnects = [] } = useQuery({ queryKey: ['logs', 'robot_offline'], queryFn: () => getLogs({ event_type: 'robot_offline', limit: 30 }), refetchInterval: 30_000 })
   const { data: rdsIssues = [] } = useQuery({ queryKey: ['logs', 'rds_core_issue'], queryFn: () => getLogs({ event_type: 'rds_core_issue', limit: 5 }), refetchInterval: 30_000 })
-  const { data: recent = [] } = useQuery({ queryKey: ['logs', 'recent'], queryFn: () => getLogs({ limit: 6 }), refetchInterval: 30_000 })
+  const { data: recent = [] } = useQuery({ queryKey: ['logs', 'recent'], queryFn: () => getLogs({ limit: 8 }), refetchInterval: 30_000 })
 
   const refreshSyncData = useCallback(() => {
     qc.invalidateQueries({ queryKey: ['servers'] })
     qc.invalidateQueries({ queryKey: ['server-stats'] })
     qc.invalidateQueries({ queryKey: ['stats'] })
     qc.invalidateQueries({ queryKey: ['logs'] })
-    qc.invalidateQueries({ queryKey: ['timeline'] })
     qc.invalidateQueries({ queryKey: ['sync-history'] })
   }, [qc])
 
@@ -96,22 +93,6 @@ export default function DashboardPage() {
       window.setTimeout(() => setSyncing(false), 8000)
     }
   }, [refreshSyncData])
-
-  const chartData = (() => {
-    const map: Record<string, Record<string, number>> = {}
-    timeline.forEach(p => {
-      const day = p.hour?.slice(0, 10) ?? ''
-      if (!map[day]) map[day] = {}
-      map[day][p.event_type] = (map[day][p.event_type] ?? 0) + p.count
-    })
-    return Object.entries(map).slice(-7).map(([day, counts]) => ({
-      day: day ? format(new Date(`${day}T12:00:00`), 'MMM d') : '',
-      'Robot offline': counts.robot_offline ?? 0,
-      'RDS core': counts.rds_core_issue ?? 0,
-      Crash: counts.crash ?? 0,
-      Error: counts.error ?? 0,
-    }))
-  })()
 
   const eventLabels: Record<string, string> = {
     robot_offline: 'Robot offline',
@@ -279,61 +260,45 @@ export default function DashboardPage() {
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
           <div className={`xl:col-span-2 ${CARD_BG} rounded-lg p-4`}>
-            <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-3"><Activity size={14} className="text-gray-400" /> Event trend - last 7 days</h2>
-            {chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={chartData} barSize={10} barGap={2}>
-                  <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} width={24} allowDecimals={false} />
-                  <Tooltip contentStyle={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 8, fontSize: 11, color: '#f9fafb' }} />
-                  <Legend wrapperStyle={{ fontSize: 11, color: '#9ca3af' }} />
-                  <Bar dataKey="Robot offline" fill="#ef4444" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="RDS core" fill="#fb7185" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="Crash" fill="#f59e0b" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="Error" fill="#6366f1" radius={[3, 3, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex items-center justify-center h-40 text-gray-600 text-sm">No data yet - run Sync All</div>
-            )}
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-white flex items-center gap-2"><Bell size={14} className="text-gray-400" /> Recent events</h2>
+              <button onClick={() => nav('/logs')} className="text-xs text-indigo-400 hover:text-indigo-300">Open logs</button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {recent.slice(0, 8).map(ev => (
+                <button key={ev.id} onClick={() => nav(`/logs?event_type=${ev.event_type}`)} className="w-full text-left bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 hover:border-gray-600 hover:bg-gray-750 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-gray-300 truncate">{ev.server_name}</span>
+                    <span className="text-xs text-gray-500 ml-auto flex-shrink-0">{safeTime(ev.timestamp)}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1 truncate">{eventLabels[ev.event_type] ?? ev.event_type} - {eventSummary(ev.plain_english || ev.message)}</p>
+                </button>
+              ))}
+              {recent.length === 0 && <p className="text-sm text-gray-500 py-6">No recent events found.</p>}
+            </div>
           </div>
 
-          <div className="space-y-3">
-            <div className={`${CARD_BG} rounded-lg p-4`}>
-              <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-3"><Bell size={14} className="text-gray-400" /> Recent events</h2>
-              <div className="space-y-2">
-                {recent.slice(0, 4).map(ev => (
-                  <button key={ev.id} onClick={() => nav(`/logs?event_type=${ev.event_type}`)} className="w-full text-left pl-3 border-l-2 border-l-gray-600 py-1.5 hover:bg-gray-700/50 rounded-r transition-colors">
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs font-semibold text-gray-300 truncate max-w-28">{ev.server_name?.split(' ')[0]}</span>
-                      <span className="text-xs text-gray-500 ml-auto">{safeTime(ev.timestamp)}</span>
+          <div className={`${CARD_BG} rounded-lg p-4`}>
+            <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-3"><Shield size={14} className="text-gray-400" /> System health</h2>
+            <div className="space-y-2">
+              {[
+                { icon: CheckCircle, label: 'Disk - all servers', detail: `${stats?.disk_error_count ?? 0} disk errors`, ok: (stats?.disk_error_count ?? 0) === 0 },
+                { icon: Database, label: 'RDS core', detail: `${stats?.rds_core_issue_count ?? 0} RDS issues`, ok: (stats?.rds_core_issue_count ?? 0) === 0 },
+                { icon: Radio, label: 'Robot connectivity', detail: `${stats?.robot_offline_count ?? 0} disconnects`, ok: (stats?.robot_offline_count ?? 0) === 0 },
+                { icon: AlertTriangle, label: 'App crashes', detail: `${stats?.crash_count ?? 0} crashes`, ok: (stats?.crash_count ?? 0) === 0 },
+                { icon: Activity, label: 'Critical events', detail: `${stats?.critical_events ?? 0} high/critical`, ok: (stats?.critical_events ?? 0) === 0 },
+              ].map(item => (
+                <button key={item.label} onClick={() => nav('/logs')} className="w-full flex items-start gap-2 rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-left hover:border-gray-600 hover:bg-gray-750 transition-colors">
+                  <item.icon size={14} className={`mt-0.5 flex-shrink-0 ${item.ok ? 'text-green-500' : 'text-amber-400'}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-gray-300">{item.label}</span>
+                      <span className={`text-xs font-medium ${item.ok ? 'text-green-400' : 'text-amber-400'}`}>{item.ok ? 'OK' : 'Check'}</span>
                     </div>
-                    <p className="text-xs text-gray-500 mt-0.5 truncate">{eventLabels[ev.event_type] ?? ev.event_type} - {eventSummary(ev.message)}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className={`${CARD_BG} rounded-lg p-4`}>
-              <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-3"><Shield size={14} className="text-gray-400" /> System health</h2>
-              <div className="space-y-2">
-                {[
-                  { icon: CheckCircle, label: 'Disk - all servers', detail: `${stats?.disk_error_count ?? 0} disk errors`, ok: (stats?.disk_error_count ?? 0) === 0 },
-                  { icon: Database, label: 'RDS core', detail: `${stats?.rds_core_issue_count ?? 0} RDS issues`, ok: (stats?.rds_core_issue_count ?? 0) === 0 },
-                  { icon: Radio, label: 'Robot connectivity', detail: `${stats?.robot_offline_count ?? 0} disconnects`, ok: (stats?.robot_offline_count ?? 0) === 0 },
-                ].map(item => (
-                  <div key={item.label} className="flex items-start gap-2">
-                    <item.icon size={14} className={`mt-0.5 flex-shrink-0 ${item.ok ? 'text-green-500' : 'text-amber-400'}`} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-gray-300">{item.label}</span>
-                        <span className={`text-xs font-medium ${item.ok ? 'text-green-400' : 'text-amber-400'}`}>{item.ok ? 'OK' : 'Check'}</span>
-                      </div>
-                      <p className="text-xs text-gray-500">{item.detail}</p>
-                    </div>
+                    <p className="text-xs text-gray-500">{item.detail}</p>
                   </div>
-                ))}
-              </div>
+                </button>
+              ))}
             </div>
           </div>
         </div>
