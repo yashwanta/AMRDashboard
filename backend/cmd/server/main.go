@@ -50,8 +50,17 @@ func main() {
 	sched.Start()
 	defer sched.Stop()
 
+	if cfg.SyncOnStartup {
+		delay := time.Duration(cfg.SyncStartupDelaySeconds) * time.Second
+		go func() {
+			log.Printf("startup sync: waiting %s before first sync", delay)
+			time.Sleep(delay)
+			syncH.RunScheduled()
+		}()
+	}
+
 	// HTTP server
-	router := api.NewRouter(pool, cfg.EncryptionKey)
+	router := api.NewRouter(pool, cfg)
 	srv := &http.Server{
 		Addr:    ":" + cfg.ServerPort,
 		Handler: router,
