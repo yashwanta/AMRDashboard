@@ -157,6 +157,9 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 	if source == "rds_network_neighbors" {
 		return newEvent(serverID, ts, "unknown", "low", line, source)
 	}
+	if severity, ok := classifyPackageUpdate(matchLine, source); ok {
+		return newEvent(serverID, ts, "update", severity, line, source)
+	}
 	if severity, ok := classifyChargeDIChange(matchLine, source); ok {
 		return newEvent(serverID, ts, "roboshop_chargedi_change", severity, line, source)
 	}
@@ -220,6 +223,23 @@ func classifyWarLinkFailure(line, source string) (string, bool) {
 	}
 	if hasAny(line, "returned 4", "returned 5", "error") || (strings.Contains(line, "timeout") && hasAny(line, "warlink", "writetag", "readmultiple")) {
 		return "medium", true
+	}
+	return "", false
+}
+
+func classifyPackageUpdate(line, source string) (string, bool) {
+	source = strings.ToLower(source)
+	if hasAny(line,
+		"/var/log/apt/history.log", "/var/log/apt/term.log", "unattended-upgrade",
+		"apt-get", "apt ", "aptitude", "dpkg", "dnf ", "yum ",
+	) || hasAny(source, "apt", "dpkg", "package") {
+		if hasAny(line, "fail", "failed", "error", "dpkg error", "sub-process") {
+			return "medium", true
+		}
+		if hasAny(line, "security", "unattended-upgrade", "upgrade") {
+			return "low", true
+		}
+		return "info", true
 	}
 	return "", false
 }

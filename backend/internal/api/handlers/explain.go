@@ -68,6 +68,16 @@ func PlainEnglishLog(ev models.LogEvent) string {
 	}
 	lower := strings.ToLower(raw)
 
+	if isPackageUpdateLog(lower) {
+		switch {
+		case strings.Contains(lower, "unattended-upgrade"):
+			return "Ubuntu automatic updates ran on this server."
+		case strings.Contains(lower, "apt-get") || strings.Contains(lower, "/var/log/apt/") || strings.Contains(lower, "dpkg"):
+			return "Ubuntu package management activity was recorded on this server."
+		case strings.Contains(lower, "dnf ") || strings.Contains(lower, "yum "):
+			return "Linux package management activity was recorded on this server."
+		}
+	}
 	if access := parseProxmoxAccessDetails(raw); access != nil {
 		if access.Action == "console" && access.ResourceType != "" && access.ResourceID != "" {
 			return fmt.Sprintf("Someone using %s opened the Proxmox console/VNC session for %s %s from IP %s on %s.", access.User, access.ResourceType, access.ResourceID, access.ClientIP, access.Time)
@@ -269,6 +279,8 @@ func PlainEnglishLog(ev models.LogEvent) string {
 		return "A power or network signal was recorded."
 	case "crash":
 		return "A crash, kernel panic, segfault, or core dump event was recorded."
+	case "update":
+		return "Package update or package manager activity was recorded."
 	case "robot_online":
 		return "A robot connection returned to an online state."
 	case "unknown":
@@ -293,6 +305,12 @@ func RecommendedAction(ev models.LogEvent) string {
 
 	if access := parseProxmoxAccessDetails(raw); access != nil {
 		return fmt.Sprintf("Reference only. Concern only if you did not do it, do not recognize %s, or %s should not have been used.", access.ClientIP, access.User)
+	}
+	if ev.EventType == "update" || isPackageUpdateLog(lower) {
+		if strings.Contains(lower, "unattended-upgrade") {
+			return "Reference only. Automatic Ubuntu updates are normal unless services broke, packages failed, or the server rebooted unexpectedly afterward."
+		}
+		return "Review only if this package activity was unexpected or happened right before a service issue."
 	}
 	if ev.EventType == "rds_map_update" {
 		details := parseRDSMapDetails(raw)
@@ -339,6 +357,17 @@ func RecommendedAction(ev models.LogEvent) string {
 		return "Confirm whether this was expected administrative activity."
 	}
 	return ""
+}
+
+func isPackageUpdateLog(lower string) bool {
+	return strings.Contains(lower, "/var/log/apt/history.log") ||
+		strings.Contains(lower, "/var/log/apt/term.log") ||
+		strings.Contains(lower, "unattended-upgrade") ||
+		strings.Contains(lower, "apt-get") ||
+		strings.Contains(lower, "apt ") ||
+		strings.Contains(lower, "dpkg") ||
+		strings.Contains(lower, "dnf ") ||
+		strings.Contains(lower, "yum ")
 }
 
 type warLinkDetails struct {

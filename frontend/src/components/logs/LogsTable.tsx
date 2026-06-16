@@ -442,6 +442,12 @@ function explainMessage(ev: LogEvent): string {
     if (warlink.reason) parts.push(`because ${warlink.reason}`)
     return `${parts.join(' ')}.`
   }
+  if (ev.event_type === 'update') {
+    if (message.includes('unattended-upgrade')) return 'Ubuntu automatic updates ran on this server.'
+    if (message.includes('/var/log/apt/') || message.includes('apt-get') || message.includes('dpkg')) return 'Ubuntu package management activity was recorded on this server.'
+    if (message.includes('dnf ') || message.includes('yum ')) return 'Linux package management activity was recorded on this server.'
+    return 'Package update or package manager activity was recorded.'
+  }
   const rds = parseRdsLog(raw)
   const oom = ev.oom_analysis
   if (ev.event_type === 'robot_offline' && rds?.serverIP) {
@@ -507,6 +513,10 @@ function suggestAction(ev: LogEvent): string | null {
     return 'Most likely reason: WarLink does not currently have an established PLC connection. Check PLC power/network reachability from Springfield Edge, shingo-edge/WarLink service connection state, and the affected PLC route/tag before restarting the service.'
   }
   const message = raw.toLowerCase()
+  if (ev.event_type === 'update') {
+    if (message.includes('unattended-upgrade')) return 'Reference only: automatic Ubuntu updates are normal unless services broke, packages failed, or the server rebooted unexpectedly afterward.'
+    return 'Review only if this package activity was unexpected or happened right before a service issue.'
+  }
   if (ev.event_type === 'robot_offline') {
     if (message.includes('timeout')) return 'Check robot power and network reachability from the server.'
     if (message.includes('remote host closed')) return 'Confirm whether the robot was restarted or intentionally disconnected.'
@@ -580,6 +590,13 @@ function friendlySummary(ev: LogEvent): string {
       chargeDI.ip ? `from ${chargeDI.ip}` : null,
       chargeDI.user ? `by ${chargeDI.user}` : null,
     ].filter(Boolean).join(' - ')
+  }
+  if (ev.event_type === 'update') {
+    const message = raw.toLowerCase()
+    if (message.includes('unattended-upgrade')) return 'Ubuntu automatic updates ran'
+    if (message.includes('/var/log/apt/') || message.includes('apt-get') || message.includes('dpkg')) return 'Ubuntu package activity'
+    if (message.includes('dnf ') || message.includes('yum ')) return 'Linux package activity'
+    return 'Package update activity'
   }
   if (ev.event_type === 'rds_core_issue') {
     const app = applicationName(ev)

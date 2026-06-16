@@ -148,6 +148,13 @@ func TestParseLineLogReviewCategories(t *testing.T) {
 			eventType: "warlink_failure",
 			severity:  "critical",
 		},
+		{
+			name:      "ubuntu unattended upgrade history",
+			line:      `/var/log/apt/history.log:104:Commandline: /usr/bin/unattended-upgrade`,
+			source:    "rds_audit_logs",
+			eventType: "update",
+			severity:  "low",
+		},
 	}
 
 	for _, tt := range tests {
