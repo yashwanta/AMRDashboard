@@ -37,6 +37,23 @@ const QUICK_FILTERS = [
   { label: 'Disk Error', event_type: 'disk_smart_issue', q: 'smart disk error' },
 ]
 
+const AMR_RDS_FILTERS = [
+  { label: 'Battery Error', event_type: 'battery_error', q: 'battery low fault error voltage soc power low' },
+  { label: 'Battery Status', event_type: 'battery_status', q: 'battery_level batteryLevel GetBatteryLevel robot_status_battery_req soc voltage' },
+  { label: 'Charge Command', event_type: 'amr_charge_command', q: 'robot_other_setchargingrelay_req setchargingrelay chargingrelay charge_req goCharge go_charge' },
+  { label: 'Dock Command', event_type: 'amr_dock_command', q: 'dock_req docking dock command go dock return dock charger dock' },
+  { label: 'GoTarget Station', event_type: 'amr_gotarget_station', q: 'robot_task_gotarget_req gotarget PP65 PP66 station charger' },
+  { label: 'Settings Reset', event_type: 'rds_settings_reset', q: 'config reset model reset settings reset reloadRobodMakeIni empty config restore recover' },
+  { label: 'Settings Defaulted', event_type: 'rds_settings_defaulted', q: 'default factory active:false echoid features active:false' },
+  { label: 'RDS Upgrade', event_type: 'rds_upgrade_reset', q: 'robot_core_upgrade_robot_req upgrade.zip upgradeStatus startup.sh stop startup.sh start Robod upgrade RDS upgrade' },
+  { label: 'RDS Core Activation', event_type: 'rds_core_activation_issue', q: 'core is not activated license inactive activation failed active:false echoid' },
+  { label: 'RDS Scene Error', event_type: 'rds_scene_map_error', q: 'scene.zip error rds.scene map upload scene cannot be uploaded map md5 model_md5' },
+  { label: 'Admin Evidence Search', event_type: 'admin_evidence_search', q: 'grep journalctl COMMAND' },
+  { label: 'Template / Code Reference', event_type: 'template_code_reference', q: 'seer-task rbklib.py project-templates static JavaScript config block template' },
+]
+
+const AMR_RDS_TYPES = new Set(AMR_RDS_FILTERS.map(f => f.event_type))
+
 export default function LogsPage() {
   const [searchParams] = useSearchParams()
   const [keyword, setKeyword] = useState(searchParams.get('q') ?? '')
@@ -93,6 +110,28 @@ export default function LogsPage() {
     const values = servers.flatMap(s => (s.vmid ?? '').split(/[\s,;]+/).map(v => v.trim()).filter(Boolean))
     return [...new Set(values)].sort((a, b) => Number(a) - Number(b))
   }, [servers])
+  const amrEvents = useMemo(() => events.filter(ev => AMR_RDS_TYPES.has(ev.event_type)), [events])
+  const amrSummary = useMemo(() => {
+    const has = (type: string) => amrEvents.some(ev => ev.event_type === type)
+    const targetIds = [...new Set(amrEvents.flatMap(ev => ev.target_ids ?? []))]
+    const onlyAdminOrTemplate = amrEvents.length > 0 && amrEvents.every(ev =>
+      ev.event_type === 'admin_evidence_search' ||
+      ev.event_type === 'template_code_reference' ||
+      ev.event_type === 'not_execution_evidence')
+    let conclusion = 'No AMR/RDS investigation evidence is visible in the current filters.'
+    if (onlyAdminOrTemplate) {
+      conclusion = 'No actual AMR charge/dock command was found. The only keyword hits are administrator evidence searches or template/code references.'
+    } else if (has('rds_upgrade_reset') && (has('rds_settings_reset') || has('rds_settings_defaulted'))) {
+      conclusion = 'RDS/Robod upgrade/reset activity was detected near reset/default indicators. This is more likely to explain settings returning to default than a normal charge command.'
+    } else if (has('amr_gotarget_station')) {
+      conclusion = `A go-target command was issued${targetIds.length ? ` to ${targetIds.join(', ')}` : ''}. Confirm whether the target is configured as a charger/station point before calling it a charge command.`
+    } else if (has('amr_charge_command') || has('amr_dock_command')) {
+      conclusion = 'Charge/dock command evidence was found. Use the confidence badge to separate executed runtime commands from supporting evidence.'
+    } else if (amrEvents.length > 0) {
+      conclusion = 'AMR/RDS evidence was found. Review confidence badges before treating keyword matches as real robot execution.'
+    }
+    return { has, targetIds, conclusion }
+  }, [amrEvents])
 
   const set = (k: keyof LogFilters, v: string | number | undefined) =>
     setFilters(f => ({ ...f, [k]: v || undefined }))
@@ -207,6 +246,20 @@ export default function LogsPage() {
             ))}
           </div>
 
+          <div className="border-t border-gray-700 pt-3 space-y-2">
+            <div className="flex flex-wrap gap-2">
+              <span className="text-xs text-cyan-300 self-center mr-1 font-semibold">AMR/RDS Investigation</span>
+              {AMR_RDS_FILTERS.map(f => (
+                <button key={f.label} onClick={() => {
+                  setKeyword(f.q)
+                  set('event_type', f.event_type)
+                }} className="text-xs px-2.5 py-1 rounded-md border border-cyan-800 text-cyan-200 hover:bg-cyan-950/50">
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="flex flex-wrap items-center gap-2 border-t border-gray-700 pt-3">
             <button onClick={investigate} disabled={!filters.server_id || investigating}
               className="text-xs px-3 py-2 rounded-md bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40">
@@ -219,6 +272,50 @@ export default function LogsPage() {
             <span className="text-xs text-gray-500">Select a server and time range to correlate Ubuntu, FleetManager, and Proxmox evidence.</span>
           </div>
         </div>
+
+        {amrEvents.length > 0 && (
+          <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-white">AMR/RDS Evidence Analyzer</h2>
+                <p className="text-xs text-gray-400 mt-1">Classifies evidence confidence on top of the existing pulled logs.</p>
+              </div>
+              <span className="text-xs rounded-md border border-cyan-800 bg-cyan-950/40 text-cyan-200 px-2 py-1">{amrEvents.length} evidence rows</span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+              {[
+                ['Battery error', amrSummary.has('battery_error')],
+                ['Charge command', amrSummary.has('amr_charge_command')],
+                ['Dock command', amrSummary.has('amr_dock_command')],
+                ['GoTarget station', amrSummary.has('amr_gotarget_station')],
+                ['RDS upgrade/reset', amrSummary.has('rds_upgrade_reset')],
+                ['Settings reset/defaulted', amrSummary.has('rds_settings_reset') || amrSummary.has('rds_settings_defaulted')],
+                ['Scene/map error', amrSummary.has('rds_scene_map_error')],
+                ['Activation issue', amrSummary.has('rds_core_activation_issue')],
+                ['Admin searches', amrSummary.has('admin_evidence_search')],
+                ['Template/code only', amrSummary.has('template_code_reference')],
+              ].map(([label, yes]) => (
+                <div key={String(label)} className="bg-gray-900 border border-gray-700 rounded-md p-2">
+                  <div className="text-gray-400">{label}</div>
+                  <div className={yes ? 'text-green-300 font-semibold' : 'text-gray-500'}>{yes ? 'Yes' : 'No'}</div>
+                </div>
+              ))}
+            </div>
+            {amrSummary.targetIds.length > 0 && (
+              <div className="text-xs text-gray-300">Target IDs found: <span className="text-white font-semibold">{amrSummary.targetIds.join(', ')}</span></div>
+            )}
+            <div className="bg-gray-900 border border-gray-700 rounded-md p-3 text-sm text-gray-100">{amrSummary.conclusion}</div>
+            <div className="space-y-1 max-h-44 overflow-y-auto">
+              {amrEvents.slice().sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()).slice(0, 30).map(ev => (
+                <div key={ev.id} className="grid grid-cols-[8rem_12rem_1fr] gap-2 text-xs border-b border-gray-800 py-1">
+                  <span className="text-gray-500">{new Date(ev.timestamp).toLocaleString()}</span>
+                  <span className="text-cyan-200">{EVENT_TYPES.find(t => t.value === ev.event_type)?.label ?? ev.event_type}</span>
+                  <span className="text-gray-300 truncate">{ev.plain_english ?? ev.message}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {incident && (
           <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 space-y-3">

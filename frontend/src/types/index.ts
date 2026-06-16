@@ -62,6 +62,19 @@ export interface LogEvent {
     | 'rds_core_issue'
     | 'rds_map_update'
     | 'rds_model_update'
+    | 'battery_error'
+    | 'battery_status'
+    | 'amr_charge_command'
+    | 'amr_dock_command'
+    | 'amr_gotarget_station'
+    | 'rds_settings_reset'
+    | 'rds_settings_defaulted'
+    | 'rds_upgrade_reset'
+    | 'rds_core_activation_issue'
+    | 'rds_scene_map_error'
+    | 'admin_evidence_search'
+    | 'template_code_reference'
+    | 'not_execution_evidence'
     | 'roboshop_charge_command'
     | 'roboshop_chargedi_change'
     | 'warlink_failure'
@@ -83,6 +96,10 @@ export interface LogEvent {
   raw_line?: string
   plain_english?: string
   recommended_action?: string
+  evidence_class?: string
+  evidence_confidence?: 'high' | 'medium' | 'low' | string
+  evidence_badges?: string[]
+  target_ids?: string[]
   oom_analysis?: OOMAnalysis
   created_at: string
 }

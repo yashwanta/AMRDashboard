@@ -59,6 +59,11 @@ func enrichLogEvent(ev *models.LogEvent) {
 	}
 	ev.PlainEnglish = PlainEnglishLog(*ev)
 	ev.RecommendedAction = RecommendedAction(*ev)
+	class, confidence, badges, targets := AMREvidenceClassification(*ev)
+	ev.EvidenceClass = class
+	ev.EvidenceConfidence = confidence
+	ev.EvidenceBadges = badges
+	ev.TargetIDs = targets
 }
 
 func PlainEnglishLog(ev models.LogEvent) string {
@@ -200,6 +205,17 @@ func PlainEnglishLog(ev models.LogEvent) string {
 		}
 		return strings.Join(parts, " ") + "."
 	}
+	if strings.HasPrefix(ev.EventType, "amr_") ||
+		strings.HasPrefix(ev.EventType, "battery_") ||
+		strings.HasPrefix(ev.EventType, "rds_settings_") ||
+		ev.EventType == "rds_upgrade_reset" ||
+		ev.EventType == "rds_core_activation_issue" ||
+		ev.EventType == "rds_scene_map_error" ||
+		ev.EventType == "admin_evidence_search" ||
+		ev.EventType == "template_code_reference" ||
+		ev.EventType == "not_execution_evidence" {
+		return amrRDSPlainEnglish(ev, raw)
+	}
 
 	if robotIP := extractRobotIP(raw); ev.EventType == "robot_offline" && robotIP != "" {
 		if strings.Contains(lower, "connection refused") {
@@ -271,6 +287,32 @@ func PlainEnglishLog(ev models.LogEvent) string {
 		return "A Roboshop or RDS chargeDI edit, apply, trigger, model, or comment event was recorded."
 	case "warlink_failure":
 		return "WarLink reported a PLC communication failure."
+	case "battery_error":
+		return "A battery warning, fault, low-power, voltage, or SOC problem was recorded."
+	case "battery_status":
+		return "Battery status or battery level information was recorded."
+	case "amr_charge_command":
+		return "An AMR charge-related command was found in the logs."
+	case "amr_dock_command":
+		return "An AMR dock-related command was found in the logs."
+	case "amr_gotarget_station":
+		return "An AMR go-target command was found; confirm the target is a charger or station before calling it a charge command."
+	case "rds_settings_reset":
+		return "RDS or Robod settings reset activity was recorded."
+	case "rds_settings_defaulted":
+		return "RDS or Robod settings appear to have returned to defaults."
+	case "rds_upgrade_reset":
+		return "RDS or Robod upgrade/reset activity was recorded."
+	case "rds_core_activation_issue":
+		return "RDS Core activation or license evidence was recorded."
+	case "rds_scene_map_error":
+		return "RDS scene/map upload or validation error evidence was recorded."
+	case "admin_evidence_search":
+		return "An administrator searched logs for evidence; this is not robot execution."
+	case "template_code_reference":
+		return "A template, code, or config reference matched; this is not robot execution."
+	case "not_execution_evidence":
+		return "This line is evidence context only, not an executed AMR command."
 	case "service_failure":
 		return "A system service failed or entered a failed state."
 	case "ubuntu_log_gap":
@@ -334,6 +376,9 @@ func RecommendedAction(ev models.LogEvent) string {
 	if ev.EventType == "warlink_failure" {
 		return "Most likely reason: WarLink does not currently have an established PLC connection. Check PLC power/network reachability from Springfield Edge, the shingo-edge/WarLink service connection state, and the affected PLC route/tag before restarting the service."
 	}
+	if action := amrRDSRecommendedAction(ev, lower); action != "" {
+		return action
+	}
 
 	if ev.EventType == "robot_offline" {
 		if strings.Contains(lower, "timeout") {
@@ -368,6 +413,225 @@ func isPackageUpdateLog(lower string) bool {
 		strings.Contains(lower, "dpkg") ||
 		strings.Contains(lower, "dnf ") ||
 		strings.Contains(lower, "yum ")
+}
+
+func AMREvidenceClassification(ev models.LogEvent) (string, string, []string, []string) {
+	raw := strings.TrimSpace(ev.RawLine)
+	if raw == "" {
+		raw = strings.TrimSpace(ev.Message)
+	}
+	lower := strings.ToLower(raw)
+	targets := extractTargetIDs(raw)
+	badges := []string{}
+
+	switch {
+	case ev.EventType == "admin_evidence_search" || isAdminEvidenceOnly(lower):
+		return "admin_evidence_search", "low", []string{"Admin search only", "Not execution evidence"}, targets
+	case ev.EventType == "template_code_reference" || isTemplateOrCodeOnly(lower):
+		return "template_code_reference", "low", []string{"Template/code only", "Not execution evidence"}, targets
+	case ev.EventType == "not_execution_evidence":
+		return "not_execution_evidence", "low", []string{"Not execution evidence"}, targets
+	}
+
+	if ev.EventType == "battery_error" {
+		badges = append(badges, "Battery issue")
+	}
+	if ev.EventType == "battery_status" {
+		badges = append(badges, "Battery status")
+	}
+	if ev.EventType == "amr_gotarget_station" {
+		badges = append(badges, "Possible station target")
+	}
+	if ev.EventType == "rds_upgrade_reset" {
+		badges = append(badges, "Upgrade/reset event")
+	}
+	if ev.EventType == "rds_settings_defaulted" {
+		badges = append(badges, "Settings defaulted")
+	}
+	if ev.EventType == "rds_settings_reset" {
+		badges = append(badges, "Settings reset")
+	}
+	if ev.EventType == "rds_scene_map_error" {
+		badges = append(badges, "Scene/map issue")
+	}
+	if ev.EventType == "rds_core_activation_issue" {
+		badges = append(badges, "Activation issue")
+	}
+
+	if isExecutedRobotCommand(lower) {
+		return "executed_command", "high", prependBadge("Executed command", badges), targets
+	}
+	if isAMRRuntimeEvidence(ev.EventType, lower, ev.Source) {
+		if ev.EventType == "amr_charge_command" || ev.EventType == "amr_dock_command" {
+			badges = prependBadge("Possible executed command", badges)
+		}
+		return "runtime_evidence", "medium", badges, targets
+	}
+	if len(badges) > 0 || len(targets) > 0 {
+		return "supporting_evidence", "medium", badges, targets
+	}
+	return "", "", nil, targets
+}
+
+func amrRDSPlainEnglish(ev models.LogEvent, raw string) string {
+	_, confidence, _, targets := AMREvidenceClassification(ev)
+	targetText := ""
+	if len(targets) > 0 {
+		targetText = " Target ID found: " + strings.Join(targets, ", ") + "."
+	}
+	confText := ""
+	if confidence != "" {
+		confText = " Confidence: " + confidence + "."
+	}
+	switch ev.EventType {
+	case "battery_error":
+		return "Battery error or low-power evidence was found." + confText
+	case "battery_status":
+		return "Battery level/status evidence was found." + confText
+	case "amr_charge_command":
+		return "A charge command match was found in runtime AMR/RDS evidence." + confText
+	case "amr_dock_command":
+		return "A dock command match was found in runtime AMR/RDS evidence." + confText
+	case "amr_gotarget_station":
+		return "A go-target command was issued to a possible station/charger target." + targetText + confText
+	case "rds_settings_reset":
+		return "RDS/Robod settings reset activity was detected." + confText
+	case "rds_settings_defaulted":
+		return "RDS/Robod settings appear to have defaulted or become inactive." + confText
+	case "rds_upgrade_reset":
+		return "RDS/Robod upgrade or reset activity was detected near this log." + confText
+	case "rds_core_activation_issue":
+		return "RDS Core activation/license evidence was found." + confText
+	case "rds_scene_map_error":
+		return "RDS scene/map upload or validation error evidence was found." + confText
+	case "admin_evidence_search":
+		return "An administrator searched logs for evidence; this does not mean the robot command actually ran."
+	case "template_code_reference":
+		return "A template, source-code, or config file matched the keyword; this is reference evidence only, not robot execution."
+	case "not_execution_evidence":
+		return "This line is context evidence only and should not be counted as an executed AMR command."
+	}
+	return "AMR/RDS investigation evidence was recorded."
+}
+
+func amrRDSRecommendedAction(ev models.LogEvent, lower string) string {
+	switch ev.EventType {
+	case "admin_evidence_search":
+		return "Do not count this as an AMR action. It only shows an administrator searched logs with grep or journalctl."
+	case "template_code_reference", "not_execution_evidence":
+		return "Use this as reference only. It matched code, config, or template text and does not prove a robot command executed."
+	case "amr_gotarget_station":
+		targets := extractTargetIDs(ev.RawLine + " " + ev.Message)
+		if len(targets) > 0 {
+			return "A go-target command was issued to target " + strings.Join(targets, ", ") + ". Confirm whether this target is configured as a charger/station point before calling it a charge command."
+		}
+		return "Confirm the target metadata before treating this go-target event as a charge/station command."
+	case "rds_upgrade_reset":
+		if strings.Contains(lower, "reset") || strings.Contains(lower, "default") || strings.Contains(lower, "active:false") {
+			return "RDS/Robod upgrade/reset activity was detected near reset/default indicators. This is more likely to explain settings returning to default than a normal charge command."
+		}
+		return "Review upgrade status, startup.sh stop/start events, and nearby settings/default logs."
+	case "rds_settings_reset", "rds_settings_defaulted":
+		return "Check recent RDS/Robod upgrade, reset, restore, or config reload activity and compare robot settings before and after this timestamp."
+	case "rds_core_activation_issue":
+		return "Check RDS Core license/activation state, echoid, and whether active:false appeared after an upgrade or reset."
+	case "rds_scene_map_error":
+		return "Review the scene/map package contents, rds.scene presence, MD5/model_md5 values, and whether robots were executing tasks during upload."
+	case "battery_error":
+		return "Check robot battery voltage/SOC, charger contact, battery fault codes, and nearby charge/dock commands."
+	case "battery_status":
+		return "Use this as supporting battery context around charge/dock or disconnect events."
+	case "amr_charge_command", "amr_dock_command":
+		return "Verify the evidence confidence. High confidence requires a runtime Send or Client To Server robot request marker; template/admin-search matches should not count."
+	}
+	return ""
+}
+
+func isExecutedRobotCommand(lower string) bool {
+	return regexp.MustCompile(`(?i)send:\[\d+\].*robot_[a-z0-9_]+_req`).MatchString(lower) ||
+		regexp.MustCompile(`(?i)client to server:.*robot_[a-z0-9_]+_req`).MatchString(lower) ||
+		((strings.Contains(lower, "roboshop.desktop") || strings.Contains(lower, "robod")) &&
+			hasAnyLocal(lower, "send", "sending", "client to server") &&
+			strings.Contains(lower, "robot_") &&
+			strings.Contains(lower, "_req"))
+}
+
+func isAMRRuntimeEvidence(eventType, lower, source string) bool {
+	source = strings.ToLower(source)
+	if strings.Contains(source, "auth.log") || isAdminEvidenceOnly(lower) || isTemplateOrCodeOnly(lower) {
+		return false
+	}
+	return strings.HasPrefix(eventType, "amr_") ||
+		strings.HasPrefix(eventType, "battery_") ||
+		strings.HasPrefix(eventType, "rds_") ||
+		strings.Contains(lower, "rdscore") ||
+		strings.Contains(lower, "roboshop") ||
+		strings.Contains(lower, "robod") ||
+		strings.Contains(lower, "robot_") ||
+		strings.Contains(lower, "warlink")
+}
+
+func isAdminEvidenceOnly(lower string) bool {
+	return strings.Contains(lower, "command=/usr/bin/grep") ||
+		strings.Contains(lower, "command=/bin/grep") ||
+		strings.Contains(lower, "command=/usr/bin/journalctl") ||
+		strings.Contains(lower, "command=/bin/journalctl") ||
+		hasAnyLocal(lower, "journalctl ", " grep ", " egrep ", " zgrep ")
+}
+
+func isTemplateOrCodeOnly(lower string) bool {
+	return hasAnyLocal(lower,
+		"/opt/roboshop/bin/appinfo/setting/editor/seer-task/",
+		"python-sdk/rbk/rbklib.py",
+		"project-templates",
+		"static/js/",
+		"/assets/index-",
+		"config/block",
+		"template task",
+		"task template",
+	)
+}
+
+func extractTargetIDs(raw string) []string {
+	seen := map[string]bool{}
+	var out []string
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)"id"\s*:\s*"(PP[0-9A-Za-z_-]+)"`),
+		regexp.MustCompile(`(?i)\btarget(?:_id|id|)\s*[=:]\s*"?([A-Z]{1,4}[0-9]{1,5})"?`),
+		regexp.MustCompile(`\b(PP[0-9A-Za-z_-]+)\b`),
+	}
+	for _, pattern := range patterns {
+		for _, match := range pattern.FindAllStringSubmatch(raw, -1) {
+			if len(match) < 2 {
+				continue
+			}
+			id := strings.ToUpper(match[1])
+			if !seen[id] {
+				seen[id] = true
+				out = append(out, id)
+			}
+		}
+	}
+	return out
+}
+
+func prependBadge(first string, rest []string) []string {
+	out := []string{first}
+	for _, badge := range rest {
+		if badge != "" && badge != first {
+			out = append(out, badge)
+		}
+	}
+	return out
+}
+
+func hasAnyLocal(s string, needles ...string) bool {
+	for _, needle := range needles {
+		if strings.Contains(s, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 type warLinkDetails struct {

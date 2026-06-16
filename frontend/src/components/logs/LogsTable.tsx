@@ -758,6 +758,25 @@ export default function LogsTable({ events, loading }: Props) {
                     ? <span className="block truncate text-xs font-mono text-gray-300">{cleanMessage(raw)}</span>
                     : <span className="block truncate text-gray-100 font-medium">{friendlySummary(ev)}</span>
                   }
+                  {(ev.evidence_confidence || ev.evidence_badges?.length || ev.target_ids?.length) && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {ev.evidence_confidence && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded border border-cyan-800 bg-cyan-950/40 text-cyan-200">
+                          {ev.evidence_confidence} confidence
+                        </span>
+                      )}
+                      {(ev.evidence_badges ?? []).slice(0, 3).map(badge => (
+                        <span key={badge} className="text-[10px] px-1.5 py-0.5 rounded border border-gray-700 bg-gray-950 text-gray-300">
+                          {badge}
+                        </span>
+                      ))}
+                      {(ev.target_ids ?? []).slice(0, 2).map(target => (
+                        <span key={target} className="text-[10px] px-1.5 py-0.5 rounded border border-indigo-800 bg-indigo-950/40 text-indigo-200">
+                          {target}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </td>
               </tr>,
 
@@ -793,6 +812,27 @@ export default function LogsTable({ events, loading }: Props) {
                               <li>{access.user} should not have been used</li>
                             </ul>
                           </div>
+                        </div>
+                      )}
+
+                      {(ev.evidence_class || ev.evidence_confidence || ev.evidence_badges?.length || ev.target_ids?.length) && (
+                        <div className="bg-cyan-950/20 border border-cyan-800/70 rounded-lg p-4 space-y-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-xs font-bold text-cyan-300 uppercase mr-1">Evidence classification</p>
+                            {ev.evidence_class && <span className="text-xs px-2 py-0.5 rounded-md border border-cyan-700 bg-cyan-950/60 text-cyan-100">{ev.evidence_class.replace(/_/g, ' ')}</span>}
+                            {ev.evidence_confidence && <span className="text-xs px-2 py-0.5 rounded-md border border-blue-700 bg-blue-950/60 text-blue-100">{ev.evidence_confidence} confidence</span>}
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {(ev.evidence_badges ?? []).map(badge => (
+                              <span key={badge} className="text-xs px-2 py-0.5 rounded-md border border-gray-700 bg-gray-950 text-gray-200">{badge}</span>
+                            ))}
+                            {(ev.target_ids ?? []).map(target => (
+                              <span key={target} className="text-xs px-2 py-0.5 rounded-md border border-indigo-700 bg-indigo-950/60 text-indigo-100">Target {target}</span>
+                            ))}
+                          </div>
+                          {(ev.evidence_class === 'admin_evidence_search' || ev.evidence_class === 'template_code_reference' || ev.evidence_class === 'not_execution_evidence') && (
+                            <p className="text-sm text-amber-100">This row is useful evidence, but it should not be counted as an executed robot charge, dock, or go-target command.</p>
+                          )}
                         </div>
                       )}
 
@@ -969,6 +1009,9 @@ export default function LogsTable({ events, loading }: Props) {
                               <tr><td className="px-3 py-2 font-medium text-gray-400">Server</td><td className="px-3 py-2 text-gray-200">{ev.server_name}</td></tr>
                               <tr><td className="px-3 py-2 font-medium text-gray-400">Category</td><td className="px-3 py-2 text-gray-200">{meta.label}</td></tr>
                               <tr><td className="px-3 py-2 font-medium text-gray-400">Application</td><td className="px-3 py-2 text-gray-200">{app}</td></tr>
+                              {ev.evidence_class && <tr><td className="px-3 py-2 font-medium text-gray-400">Evidence</td><td className="px-3 py-2 text-gray-200">{ev.evidence_class.replace(/_/g, ' ')}</td></tr>}
+                              {ev.evidence_confidence && <tr><td className="px-3 py-2 font-medium text-gray-400">Confidence</td><td className="px-3 py-2 text-gray-200">{ev.evidence_confidence}</td></tr>}
+                              {!!ev.target_ids?.length && <tr><td className="px-3 py-2 font-medium text-gray-400">Target IDs</td><td className="px-3 py-2 text-gray-200">{ev.target_ids.join(', ')}</td></tr>}
                               <tr><td className="px-3 py-2 font-medium text-gray-400">Source</td><td className="px-3 py-2 text-gray-200">{sourceLabel(ev.source)}</td></tr>
                               {parsed?.host && <tr><td className="px-3 py-2 font-medium text-gray-400">Hostname</td><td className="px-3 py-2 font-mono text-gray-200">{parsed.host}</td></tr>}
                               {parsed?.process && <tr><td className="px-3 py-2 font-medium text-gray-400">Process</td><td className="px-3 py-2 font-mono text-gray-200">{parsed.process}</td></tr>}

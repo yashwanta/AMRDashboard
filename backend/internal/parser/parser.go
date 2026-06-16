@@ -121,6 +121,9 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 	if strings.TrimSpace(line) == "" {
 		return nil
 	}
+	if strings.TrimSpace(line) == "-- No entries --" {
+		return nil
+	}
 
 	if strings.HasPrefix(strings.TrimSpace(line), "reboot") &&
 		strings.Contains(line, "system boot") {
@@ -139,26 +142,68 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 	if strings.Contains(line, "SSL_shutdown") || strings.Contains(line, "CrowdStrike") {
 		return nil
 	}
+	ts := extractTimestamp(line)
+	matchLine := strings.ToLower(line)
 	if strings.Contains(line, "TTY=pts") && strings.Contains(line, "COMMAND=") {
+		if isAdminEvidenceSearch(matchLine) {
+			return newEvent(serverID, ts, "admin_evidence_search", "low", line, source)
+		}
 		return nil
 	}
 	if strings.Contains(line, "TTY=tty") && strings.Contains(line, "COMMAND=") {
+		if isAdminEvidenceSearch(matchLine) {
+			return newEvent(serverID, ts, "admin_evidence_search", "low", line, source)
+		}
 		return nil
 	}
 	if strings.Contains(line, "(command continued)") {
 		return nil
 	}
 	if strings.Contains(source, "root_history") && hasAny(strings.ToLower(line), "grep ", "egrep ", "journalctl ", "zgrep ") {
-		return nil
+		return newEvent(serverID, ts, "admin_evidence_search", "low", line, source)
 	}
 
-	ts := extractTimestamp(line)
-	matchLine := strings.ToLower(line)
 	if source == "rds_network_neighbors" {
 		return newEvent(serverID, ts, "unknown", "low", line, source)
 	}
+	if isTemplateCodeReference(matchLine) {
+		return newEvent(serverID, ts, "template_code_reference", "low", line, source)
+	}
 	if severity, ok := classifyPackageUpdate(matchLine, source); ok {
 		return newEvent(serverID, ts, "update", severity, line, source)
+	}
+	if severity, ok := classifyWarLinkFailure(matchLine, source); ok {
+		return newEvent(serverID, ts, "warlink_failure", severity, line, source)
+	}
+	if severity, ok := classifyBattery(matchLine, source); ok {
+		if hasAny(matchLine, "error", "fault", "low", "power low", "failed", "voltage") {
+			return newEvent(serverID, ts, "battery_error", severity, line, source)
+		}
+		return newEvent(serverID, ts, "battery_status", severity, line, source)
+	}
+	if severity, ok := classifyAMRGoTargetStation(matchLine, source); ok {
+		return newEvent(serverID, ts, "amr_gotarget_station", severity, line, source)
+	}
+	if severity, ok := classifyAMRDockCommand(matchLine, source); ok {
+		return newEvent(serverID, ts, "amr_dock_command", severity, line, source)
+	}
+	if severity, ok := classifyAMRChargeCommand(matchLine, source); ok {
+		return newEvent(serverID, ts, "amr_charge_command", severity, line, source)
+	}
+	if severity, ok := classifySettingsDefaulted(matchLine, source); ok {
+		return newEvent(serverID, ts, "rds_settings_defaulted", severity, line, source)
+	}
+	if severity, ok := classifySettingsReset(matchLine, source); ok {
+		return newEvent(serverID, ts, "rds_settings_reset", severity, line, source)
+	}
+	if severity, ok := classifyRDSUpgradeReset(matchLine, source); ok {
+		return newEvent(serverID, ts, "rds_upgrade_reset", severity, line, source)
+	}
+	if severity, ok := classifyRDSActivationIssue(matchLine, source); ok {
+		return newEvent(serverID, ts, "rds_core_activation_issue", severity, line, source)
+	}
+	if severity, ok := classifyRDSSceneMapError(matchLine, source); ok {
+		return newEvent(serverID, ts, "rds_scene_map_error", severity, line, source)
 	}
 	if severity, ok := classifyChargeDIChange(matchLine, source); ok {
 		return newEvent(serverID, ts, "roboshop_chargedi_change", severity, line, source)
@@ -174,9 +219,6 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 	}
 	if severity, ok := classifyRDSCoreIssue(matchLine, source); ok {
 		return newEvent(serverID, ts, "rds_core_issue", severity, line, source)
-	}
-	if severity, ok := classifyWarLinkFailure(matchLine, source); ok {
-		return newEvent(serverID, ts, "warlink_failure", severity, line, source)
 	}
 	if strings.HasPrefix(source, "proxmox") && isProxmoxAccessLog(matchLine) {
 		return newEvent(serverID, ts, "ssh_login_activity", "low", line, source)
@@ -240,6 +282,124 @@ func classifyPackageUpdate(line, source string) (string, bool) {
 			return "low", true
 		}
 		return "info", true
+	}
+	return "", false
+}
+
+func classifyBattery(line, source string) (string, bool) {
+	if !isAMRSourceOrLine(line, source) {
+		return "", false
+	}
+	if !hasAny(line,
+		"battery", "battery_level", "batterylevel", "getbatterylevel",
+		"robot_status_battery_req", "robot_status_battery_req_simple",
+		"voltage", "soc=", "soc:", "power low",
+	) {
+		return "", false
+	}
+	if hasAny(line, "battery low", "battery fault", "battery error", "power low", "failed", "fault", "error") {
+		return "high", true
+	}
+	return "info", true
+}
+
+func classifyAMRChargeCommand(line, source string) (string, bool) {
+	if !isAMRSourceOrLine(line, source) {
+		return "", false
+	}
+	if !hasAny(line,
+		"robot_other_setchargingrelay_req", "setchargingrelay", "chargingrelay",
+		"charge_req", "gocharge", "go_charge", "charging command",
+	) && !(hasAny(line, "charge", "charging", "charger") && hasAny(line, "command", "cmd", "request", "req", "send", "sent")) {
+		return "", false
+	}
+	if hasAny(line, "fail", "failed", "failure", "error", "timeout", "denied", "reject", "rejected", "returned 4", "returned 5") {
+		return "high", true
+	}
+	return "info", true
+}
+
+func classifyAMRDockCommand(line, source string) (string, bool) {
+	if !isAMRSourceOrLine(line, source) {
+		return "", false
+	}
+	if !hasAny(line, "dock_req", "docking", "dock command", "go dock", "return dock", "charger dock") {
+		return "", false
+	}
+	if hasAny(line, "fail", "failed", "failure", "error", "timeout", "denied", "reject", "rejected", "returned 4", "returned 5") {
+		return "high", true
+	}
+	return "info", true
+}
+
+func classifyAMRGoTargetStation(line, source string) (string, bool) {
+	if !isAMRSourceOrLine(line, source) {
+		return "", false
+	}
+	if !hasAny(line, "robot_task_gotarget_req", "gotarget", "go target") {
+		return "", false
+	}
+	if hasAny(line, "fail", "failed", "failure", "error", "timeout", "denied", "reject", "rejected") {
+		return "high", true
+	}
+	return "medium", true
+}
+
+func classifySettingsDefaulted(line, source string) (string, bool) {
+	if !isAMRSourceOrLine(line, source) {
+		return "", false
+	}
+	if hasAny(line, "settings default", "defaulted", "factory default", "active:false", `echoid:""`, `echoid=""`, "features active:false") {
+		return "high", true
+	}
+	return "", false
+}
+
+func classifySettingsReset(line, source string) (string, bool) {
+	if !isAMRSourceOrLine(line, source) {
+		return "", false
+	}
+	if hasAny(line, "config reset", "model reset", "settings reset", "reloadrobodmakeini", "empty config", "restore", "recover") ||
+		(hasAny(line, "reset", "factory") && hasAny(line, "setting", "settings", "config", "model", "robod", "rds")) {
+		return "high", true
+	}
+	return "", false
+}
+
+func classifyRDSUpgradeReset(line, source string) (string, bool) {
+	if !isAMRSourceOrLine(line, source) {
+		return "", false
+	}
+	if hasAny(line,
+		"robot_core_upgrade_robot_req", "upgrade.zip", "upgradestatus",
+		"startup.sh stop", "startup.sh start", "upgrade succeeded", "upgrade failed",
+		"robod upgrade", "rds upgrade",
+	) {
+		if hasAny(line, "failed", "failure", "error") {
+			return "high", true
+		}
+		return "medium", true
+	}
+	return "", false
+}
+
+func classifyRDSActivationIssue(line, source string) (string, bool) {
+	if !isAMRSourceOrLine(line, source) {
+		return "", false
+	}
+	if hasAny(line, "core is not activated", "rdscoreæœªæ¿€æ´»", "license inactive", "activation failed", "active:false", `echoid:""`, `echoid=""`) {
+		return "high", true
+	}
+	return "", false
+}
+
+func classifyRDSSceneMapError(line, source string) (string, bool) {
+	if !isAMRSourceOrLine(line, source) {
+		return "", false
+	}
+	if hasAny(line, "scene.zip error", "don't contain rds.scene", "doesn't contain rds.scene", "rds.scene", "scene cannot be uploaded during task execution", "map md5", "model_md5") ||
+		(hasAny(line, "map upload", "scene upload", "smap", "scene") && hasAny(line, "fail", "failed", "failure", "error", "cannot")) {
+		return "high", true
 	}
 	return "", false
 }
@@ -379,6 +539,40 @@ func classifyRDSCoreIssue(line, source string) (string, bool) {
 		return "medium", true
 	}
 	return "", false
+}
+
+func isAMRSourceOrLine(line, source string) bool {
+	source = strings.ToLower(source)
+	return strings.Contains(source, "rds") ||
+		strings.Contains(source, "roboshop") ||
+		strings.Contains(source, "robod") ||
+		strings.Contains(source, "journald_amr") ||
+		strings.Contains(line, "rds") ||
+		strings.Contains(line, "rdscore") ||
+		strings.Contains(line, "roboshop") ||
+		strings.Contains(line, "robod") ||
+		strings.Contains(line, "robot_")
+}
+
+func isAdminEvidenceSearch(line string) bool {
+	return strings.Contains(line, "command=/usr/bin/grep") ||
+		strings.Contains(line, "command=/bin/grep") ||
+		strings.Contains(line, "command=/usr/bin/journalctl") ||
+		strings.Contains(line, "command=/bin/journalctl") ||
+		hasAny(line, "journalctl ", " grep ", " egrep ", " zgrep ")
+}
+
+func isTemplateCodeReference(line string) bool {
+	return hasAny(line,
+		"/opt/roboshop/bin/appinfo/setting/editor/seer-task/",
+		"python-sdk/rbk/rbklib.py",
+		"project-templates",
+		"static/js/",
+		"/assets/index-",
+		"config/block",
+		"template task",
+		"task template",
+	)
 }
 
 func isProxmoxAccessLog(line string) bool {

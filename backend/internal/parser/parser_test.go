@@ -89,7 +89,7 @@ func TestParseLineLogReviewCategories(t *testing.T) {
 			name:      "rds map update failure",
 			line:      `2026-06-15T10:11:12Z rds scene upload failed user=operator1 source=10.2.1.60 map=LineA.smap`,
 			source:    "rds_file_logs",
-			eventType: "rds_map_update",
+			eventType: "rds_scene_map_error",
 			severity:  "high",
 		},
 		{
@@ -117,7 +117,7 @@ func TestParseLineLogReviewCategories(t *testing.T) {
 			name:      "roboshop charge command failure",
 			line:      `2026-06-15T10:14:12Z Roboshop charge command failed robot=AMR-17 user=operator1 client=10.2.1.60 error=timeout`,
 			source:    "roboshop_app",
-			eventType: "roboshop_charge_command",
+			eventType: "amr_charge_command",
 			severity:  "high",
 		},
 		{
@@ -155,6 +155,34 @@ func TestParseLineLogReviewCategories(t *testing.T) {
 			eventType: "update",
 			severity:  "low",
 		},
+		{
+			name:      "executed charge command",
+			line:      `2026-06-15T10:41:00Z Roboshop.desktop Send:[2011]robot_other_setchargingrelay_req {"robot":"AMR01"}`,
+			source:    "roboshop_app",
+			eventType: "amr_charge_command",
+			severity:  "info",
+		},
+		{
+			name:      "go target station command",
+			line:      `2026-06-15T10:42:00Z Robod Client To Server: 函数:[robot_task_gotarget_req] {"id":"PP66"}`,
+			source:    "journald_robod",
+			eventType: "amr_gotarget_station",
+			severity:  "medium",
+		},
+		{
+			name:      "admin grep evidence search",
+			line:      `Jun 15 19:40:52 host sudo: admin : TTY=pts/0 ; PWD=/root ; USER=root ; COMMAND=/usr/bin/grep -R charge /opt/Roboshop`,
+			source:    "auth.log",
+			eventType: "admin_evidence_search",
+			severity:  "low",
+		},
+		{
+			name:      "template charge reference",
+			line:      `/opt/Roboshop/bin/appInfo/setting/Editor/seer-task/template.json: robot_other_setchargingrelay_req`,
+			source:    "rds_file_logs",
+			eventType: "template_code_reference",
+			severity:  "low",
+		},
 	}
 
 	for _, tt := range tests {
@@ -177,6 +205,13 @@ func TestParseLineSkipsHistoricalRebootOutput(t *testing.T) {
 	ev := ParseLine("reboot   system boot  6.8.0-110-generic  Wed Apr 29 10:49 - 15:16 (20+04:27)", "system_info", 7)
 	if ev != nil {
 		t.Fatalf("expected historical reboot output to be skipped, got %q", ev.EventType)
+	}
+}
+
+func TestParseLineSkipsNoEntriesOutput(t *testing.T) {
+	ev := ParseLine("-- No entries --", "journald_warlink", 7)
+	if ev != nil {
+		t.Fatalf("expected empty journal output to be skipped, got %q", ev.EventType)
 	}
 }
 
@@ -225,10 +260,13 @@ func TestParseLineParsesProxmoxOffsetTimestamp(t *testing.T) {
 	}
 }
 
-func TestParseLineSkipsRootHistorySearchCommands(t *testing.T) {
+func TestParseLineClassifiesRootHistorySearchCommandsAsEvidence(t *testing.T) {
 	ev := ParseLine(`/root/.bash_history:498:journalctl --since "2026-06-05 22:05:30" --until "2026-06-05 22:06:30" --no-pager | egrep -i "oom|out of memory|killed process|113.scope|qemu.slice|kvm"`, "proxmox_root_history@10.222.10.50", 7)
-	if ev != nil {
-		t.Fatalf("expected root history search command to be skipped, got %q", ev.EventType)
+	if ev == nil {
+		t.Fatal("expected admin evidence search event, got nil")
+	}
+	if ev.EventType != "admin_evidence_search" {
+		t.Fatalf("event type = %q, want admin_evidence_search", ev.EventType)
 	}
 }
 
