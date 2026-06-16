@@ -25,6 +25,25 @@ powershell -ExecutionPolicy Bypass -File scripts\create-install-package.ps1 -Inc
 
 `-IncludeImages` builds and stores Docker images inside `images\robowatch-images.tar`. The target server still needs Docker installed, but it will not need to rebuild the app images.
 
+## Create A Runtime-Only Package Without Source Code
+
+Use this when you are giving DRISHTI SiteOps to another person or another computer and you do not want to include the Go/React source code:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\create-install-package.ps1 -Protected
+```
+
+This creates:
+
+```text
+packages\drishti-siteops-runtime-YYYYMMDD-HHMMSS.zip
+packages\drishti-siteops-runtime-YYYYMMDD-HHMMSS.tar.gz
+```
+
+The protected package includes installer scripts, documentation, a runtime-only `docker-compose.yml`, and prebuilt container images. It does **not** include `backend\internal`, `backend\cmd`, `frontend\src`, Git history, or the development workspace.
+
+Important: this protects your source code from casual copying. It does not make reverse engineering impossible, because any installed web app/container can still be inspected at some level.
+
 ## Ubuntu Install
 
 Copy the `.tar.gz` or `.zip` to the Ubuntu server, extract it, then run:

@@ -1,6 +1,8 @@
 param(
     [string]$OutputDir = "packages",
-    [switch]$IncludeImages
+    [switch]$IncludeImages,
+    [switch]$Protected,
+    [switch]$UseExistingImages
 )
 
 $ErrorActionPreference = "Stop"
@@ -8,6 +10,10 @@ $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $PackageName = "robowatch-install-$Stamp"
+if ($Protected) {
+    $PackageName = "drishti-siteops-runtime-$Stamp"
+    $IncludeImages = $true
+}
 $PackageRoot = Join-Path $Root $OutputDir
 $Stage = Join-Path $PackageRoot $PackageName
 
@@ -42,15 +48,24 @@ if (Test-Path $Stage) {
 }
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 
-$items = @(
-    "backend",
-    "frontend",
-    "scripts",
-    "docs",
-    "docker-compose.yml",
-    "INSTALL.md",
-    "README.md"
-)
+if ($Protected) {
+    $items = @(
+        "scripts",
+        "docs",
+        "INSTALL.md",
+        "README.md"
+    )
+} else {
+    $items = @(
+        "backend",
+        "frontend",
+        "scripts",
+        "docs",
+        "docker-compose.yml",
+        "INSTALL.md",
+        "README.md"
+    )
+}
 
 foreach ($item in $items) {
     Copy-RepoItem $item
@@ -75,12 +90,92 @@ Get-ChildItem -Path $Stage -Recurse -Include "*.pyc", "*.pyo" -ErrorAction Silen
 
 if ($IncludeImages) {
     $runtime = Get-ContainerRuntime
-    Write-Host "Building bundled container images with $runtime..." -ForegroundColor Cyan
-    & $runtime build -t robowatch-backend:latest -f (Join-Path $Root "backend\Dockerfile") (Join-Path $Root "backend")
-    & $runtime build -t robowatch-frontend:latest -f (Join-Path $Root "frontend\Dockerfile") (Join-Path $Root "frontend")
+    if ($UseExistingImages) {
+        Write-Host "Using existing bundled container images with $runtime..." -ForegroundColor Cyan
+    } else {
+        Write-Host "Building bundled container images with $runtime..." -ForegroundColor Cyan
+        & $runtime build -t robowatch-backend:latest -f (Join-Path $Root "backend\Dockerfile") (Join-Path $Root "backend")
+        & $runtime build -t robowatch-frontend:latest -f (Join-Path $Root "frontend\Dockerfile") (Join-Path $Root "frontend")
+    }
     $imageDir = Join-Path $Stage "images"
     New-Item -ItemType Directory -Force -Path $imageDir | Out-Null
     & $runtime save -o (Join-Path $imageDir "robowatch-images.tar") robowatch-backend:latest robowatch-frontend:latest postgres:16-alpine
+}
+
+if ($Protected) {
+    @'
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-amr}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-amr}
+      POSTGRES_DB: ${POSTGRES_DB:-amrdashboard}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U amr -d amrdashboard"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    image: ${BACKEND_IMAGE:-robowatch-backend:latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-amr}:${POSTGRES_PASSWORD:-amr}@postgres:5432/${POSTGRES_DB:-amrdashboard}?sslmode=disable
+      SERVER_PORT: 8080
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-change-this-32-byte-secret-key!!}
+      SESSION_SECRET: ${SESSION_SECRET:-change-this-session-secret!!}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      ALLOW_CUSTOM_COMMANDS: ${ALLOW_CUSTOM_COMMANDS:-false}
+      SCHEDULE_AM: "0 6 * * *"
+      SCHEDULE_PM: "0 18 * * *"
+      SYNC_ON_STARTUP: ${SYNC_ON_STARTUP:-true}
+      SYNC_STARTUP_DELAY_SECONDS: ${SYNC_STARTUP_DELAY_SECONDS:-20}
+    ports:
+      - "${API_PORT:-8080}:8080"
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-robowatch-frontend:latest}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${APP_PORT:-3000}:80"
+
+volumes:
+  pgdata:
+'@ | Set-Content -Path (Join-Path $Stage "docker-compose.yml") -Encoding ASCII
+
+    @"
+DRISHTI SiteOps runtime package
+================================
+
+This package is intended for installation on another computer without shipping the application source code.
+
+Included:
+- Installer scripts
+- Documentation
+- Prebuilt container images in images\robowatch-images.tar
+- Runtime-only docker-compose.yml
+
+Not included:
+- backend Go source code
+- frontend React/TypeScript source code
+- Git history
+- developer workspace files
+
+Security note:
+This protects your source from casual copying. It does not make reverse engineering impossible because any deployed application can be inspected at some level.
+"@ | Set-Content -Path (Join-Path $Stage "RUNTIME_PACKAGE_README.txt") -Encoding ASCII
 }
 
 $zipPath = Join-Path $PackageRoot "$PackageName.zip"
