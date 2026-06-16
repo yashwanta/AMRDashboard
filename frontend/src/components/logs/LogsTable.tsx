@@ -821,6 +821,7 @@ export default function LogsTable({ events, loading }: Props) {
                             <p className="text-xs font-bold text-cyan-300 uppercase mr-1">Evidence classification</p>
                             {ev.evidence_class && <span className="text-xs px-2 py-0.5 rounded-md border border-cyan-700 bg-cyan-950/60 text-cyan-100">{ev.evidence_class.replace(/_/g, ' ')}</span>}
                             {ev.evidence_confidence && <span className="text-xs px-2 py-0.5 rounded-md border border-blue-700 bg-blue-950/60 text-blue-100">{ev.evidence_confidence} confidence</span>}
+                            {typeof ev.execution_evidence === 'boolean' && <span className={clsx('text-xs px-2 py-0.5 rounded-md border', ev.execution_evidence ? 'border-green-700 bg-green-950/60 text-green-100' : 'border-amber-700 bg-amber-950/60 text-amber-100')}>Execution evidence: {ev.execution_evidence ? 'true' : 'false'}</span>}
                           </div>
                           <div className="flex flex-wrap gap-1.5">
                             {(ev.evidence_badges ?? []).map(badge => (
@@ -1011,6 +1012,7 @@ export default function LogsTable({ events, loading }: Props) {
                               <tr><td className="px-3 py-2 font-medium text-gray-400">Application</td><td className="px-3 py-2 text-gray-200">{app}</td></tr>
                               {ev.evidence_class && <tr><td className="px-3 py-2 font-medium text-gray-400">Evidence</td><td className="px-3 py-2 text-gray-200">{ev.evidence_class.replace(/_/g, ' ')}</td></tr>}
                               {ev.evidence_confidence && <tr><td className="px-3 py-2 font-medium text-gray-400">Confidence</td><td className="px-3 py-2 text-gray-200">{ev.evidence_confidence}</td></tr>}
+                              {typeof ev.execution_evidence === 'boolean' && <tr><td className="px-3 py-2 font-medium text-gray-400">Execution evidence</td><td className="px-3 py-2 text-gray-200">{ev.execution_evidence ? 'true' : 'false'}</td></tr>}
                               {!!ev.target_ids?.length && <tr><td className="px-3 py-2 font-medium text-gray-400">Target IDs</td><td className="px-3 py-2 text-gray-200">{ev.target_ids.join(', ')}</td></tr>}
                               <tr><td className="px-3 py-2 font-medium text-gray-400">Source</td><td className="px-3 py-2 text-gray-200">{sourceLabel(ev.source)}</td></tr>
                               {parsed?.host && <tr><td className="px-3 py-2 font-medium text-gray-400">Hostname</td><td className="px-3 py-2 font-mono text-gray-200">{parsed.host}</td></tr>}

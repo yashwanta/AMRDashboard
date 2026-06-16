@@ -145,8 +145,14 @@ func (h *LogHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func shouldAnalyzeOOMRow(ev models.LogEvent) bool {
+	if ev.EventType == "admin_evidence_search" || ev.EventType == "template_code_reference" || ev.EventType == "not_execution_evidence" {
+		return false
+	}
 	raw := strings.ToLower(ev.RawLine + " " + ev.Message)
 	if strings.Contains(raw, "pveproxy/access.log") || strings.Contains(raw, "/api2/") {
+		return false
+	}
+	if isAdminEvidenceOnly(raw) || isTemplateOrCodeOnly(raw) {
 		return false
 	}
 	msg := strings.ToLower(ev.Message)

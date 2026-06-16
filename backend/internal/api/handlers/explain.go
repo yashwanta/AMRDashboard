@@ -64,6 +64,10 @@ func enrichLogEvent(ev *models.LogEvent) {
 	ev.EvidenceConfidence = confidence
 	ev.EvidenceBadges = badges
 	ev.TargetIDs = targets
+	if class != "" {
+		executed := class == "executed_command"
+		ev.ExecutionEvidence = &executed
+	}
 }
 
 func PlainEnglishLog(ev models.LogEvent) string {
@@ -576,6 +580,10 @@ func isAdminEvidenceOnly(lower string) bool {
 		strings.Contains(lower, "command=/bin/grep") ||
 		strings.Contains(lower, "command=/usr/bin/journalctl") ||
 		strings.Contains(lower, "command=/bin/journalctl") ||
+		(strings.Contains(lower, "command=/usr/bin/bash") && hasAnyLocal(lower, " grep ", "'grep", "\"grep", " journalctl ", "'journalctl", "\"journalctl")) ||
+		(strings.Contains(lower, "command=/bin/bash") && hasAnyLocal(lower, " grep ", "'grep", "\"grep", " journalctl ", "'journalctl", "\"journalctl")) ||
+		(strings.Contains(lower, "sudo") && hasAnyLocal(lower, " grep ", "'grep", "\"grep", " journalctl ", "'journalctl", "\"journalctl")) ||
+		(strings.Contains(lower, "sudo[") && hasAnyLocal(lower, "grep", "journalctl")) ||
 		hasAnyLocal(lower, "journalctl ", " grep ", " egrep ", " zgrep ")
 }
 

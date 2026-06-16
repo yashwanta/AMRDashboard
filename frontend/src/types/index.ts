@@ -99,6 +99,7 @@ export interface LogEvent {
   evidence_class?: string
   evidence_confidence?: 'high' | 'medium' | 'low' | string
   evidence_badges?: string[]
+  execution_evidence?: boolean
   target_ids?: string[]
   oom_analysis?: OOMAnalysis
   created_at: string

@@ -35,6 +35,16 @@ func TestAMREvidenceClassification(t *testing.T) {
 			confidence: "low",
 		},
 		{
+			name: "sudo bash grep with action keywords is not execution",
+			event: models.LogEvent{
+				EventType: "admin_evidence_search",
+				Source:    "auth.log",
+				RawLine:   `sudo[1235]: operator : COMMAND=/usr/bin/bash -c 'grep -RniE "battery|charge|dock|reset|default|config" /opt/Roboshop'`,
+			},
+			class:      "admin_evidence_search",
+			confidence: "low",
+		},
+		{
 			name: "template reference is not execution",
 			event: models.LogEvent{
 				EventType: "template_code_reference",

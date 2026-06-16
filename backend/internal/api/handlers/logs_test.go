@@ -92,3 +92,15 @@ func TestAnalyzeOOMUsesTopVMWhenScopeMissing(t *testing.T) {
 		t.Fatalf("Confidence = %q, want medium", got.Confidence)
 	}
 }
+
+func TestShouldAnalyzeOOMRowSkipsAdminEvidenceSearch(t *testing.T) {
+	ev := models.LogEvent{
+		EventType: "admin_evidence_search",
+		Message:   `/root/.bash_history:495:journalctl --since "2026-06-05" | egrep -i "oom|out of memory|killed process|qemu.slice|kvm"`,
+		RawLine:   `/root/.bash_history:495:journalctl --since "2026-06-05" | egrep -i "oom|out of memory|killed process|qemu.slice|kvm"`,
+		Source:    "proxmox_root_history@10.222.10.50",
+	}
+	if shouldAnalyzeOOMRow(ev) {
+		t.Fatal("admin evidence search should not trigger OOM analysis")
+	}
+}

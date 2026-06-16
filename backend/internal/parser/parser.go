@@ -144,23 +144,17 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 	}
 	ts := extractTimestamp(line)
 	matchLine := strings.ToLower(line)
+	if isAdminEvidenceSearch(matchLine) {
+		return newEvent(serverID, ts, "admin_evidence_search", "low", line, source)
+	}
 	if strings.Contains(line, "TTY=pts") && strings.Contains(line, "COMMAND=") {
-		if isAdminEvidenceSearch(matchLine) {
-			return newEvent(serverID, ts, "admin_evidence_search", "low", line, source)
-		}
 		return nil
 	}
 	if strings.Contains(line, "TTY=tty") && strings.Contains(line, "COMMAND=") {
-		if isAdminEvidenceSearch(matchLine) {
-			return newEvent(serverID, ts, "admin_evidence_search", "low", line, source)
-		}
 		return nil
 	}
 	if strings.Contains(line, "(command continued)") {
 		return nil
-	}
-	if strings.Contains(source, "root_history") && hasAny(strings.ToLower(line), "grep ", "egrep ", "journalctl ", "zgrep ") {
-		return newEvent(serverID, ts, "admin_evidence_search", "low", line, source)
 	}
 
 	if source == "rds_network_neighbors" {
@@ -559,6 +553,10 @@ func isAdminEvidenceSearch(line string) bool {
 		strings.Contains(line, "command=/bin/grep") ||
 		strings.Contains(line, "command=/usr/bin/journalctl") ||
 		strings.Contains(line, "command=/bin/journalctl") ||
+		(strings.Contains(line, "command=/usr/bin/bash") && hasAny(line, " grep ", "'grep", "\"grep", " journalctl ", "'journalctl", "\"journalctl")) ||
+		(strings.Contains(line, "command=/bin/bash") && hasAny(line, " grep ", "'grep", "\"grep", " journalctl ", "'journalctl", "\"journalctl")) ||
+		(strings.Contains(line, "sudo") && hasAny(line, " grep ", "'grep", "\"grep", " journalctl ", "'journalctl", "\"journalctl")) ||
+		(strings.Contains(line, "sudo[") && hasAny(line, "grep", "journalctl")) ||
 		hasAny(line, "journalctl ", " grep ", " egrep ", " zgrep ")
 }
 

@@ -40,6 +40,7 @@ type LogEvent struct {
 	EvidenceClass      string       `json:"evidence_class,omitempty"`
 	EvidenceConfidence string       `json:"evidence_confidence,omitempty"`
 	EvidenceBadges     []string     `json:"evidence_badges,omitempty"`
+	ExecutionEvidence  *bool        `json:"execution_evidence,omitempty"`
 	TargetIDs          []string     `json:"target_ids,omitempty"`
 	OOMAnalysis        *OOMAnalysis `json:"oom_analysis,omitempty"`
 	CreatedAt          time.Time    `json:"created_at"`

@@ -177,6 +177,27 @@ func TestParseLineLogReviewCategories(t *testing.T) {
 			severity:  "low",
 		},
 		{
+			name:      "admin grep evidence search with battery keywords",
+			line:      `Jun 15 11:33:00 host sudo[1234]: operator : TTY=pts/0 ; PWD=/root ; USER=root ; COMMAND=/usr/bin/grep -RniE 'AMR|vehicle|battery|model|config|default|reset|charge|dock' /opt/Roboshop/bin/location/appInfo/log`,
+			source:    "auth.log",
+			eventType: "admin_evidence_search",
+			severity:  "low",
+		},
+		{
+			name:      "admin bash wrapped grep evidence search",
+			line:      `Jun 15 11:33:01 host sudo[1235]: operator : TTY=pts/0 ; PWD=/root ; USER=root ; COMMAND=/usr/bin/bash -c 'grep -RniE "battery|charge|dock|reset|default|config" /opt/Roboshop'`,
+			source:    "auth.log",
+			eventType: "admin_evidence_search",
+			severity:  "low",
+		},
+		{
+			name:      "sudo process grep without command field",
+			line:      `Jun 15 11:33:02 host sudo[1236]: grep -RniE "battery|charge|dock|reset|default|config" /opt/Roboshop`,
+			source:    "auth.log",
+			eventType: "admin_evidence_search",
+			severity:  "low",
+		},
+		{
 			name:      "template charge reference",
 			line:      `/opt/Roboshop/bin/appInfo/setting/Editor/seer-task/template.json: robot_other_setchargingrelay_req`,
 			source:    "rds_file_logs",
