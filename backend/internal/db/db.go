@@ -128,7 +128,7 @@ WHERE (
         OR COALESCE(raw_line, message) ILIKE '%Roboshop%'
         OR COALESCE(raw_line, message) ILIKE '%RDS%'
     )
-);
+  );
 
 UPDATE log_events
 SET event_type='unknown', severity='low'

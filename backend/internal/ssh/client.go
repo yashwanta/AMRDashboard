@@ -106,6 +106,7 @@ func (c *Client) FetchLogs(since time.Time, appLogPaths string) (map[string]stri
 	amrGrep := "Roboshop|rds|AMR|10[.]216[.]35|SocketState|ConnectedState|UnconnectedState" +
 		"|ClosingState|remote host closed|Connect timeout|Add device failed|Not connected" +
 		"|slotTcpError|setLastError|timeout|disconnect|connected|map|smap|scene|upload|deploy|push|19204|19205|19206|19207" +
+		"|model|models|robot[.]cp|MD5|md5|checksum|chargeDI|charge[_ -]?DI|chargingDI|charging[_ -]?DI|charge|charging|charger|dock|docking|command|cmd" +
 		"|WarLink|shingo-edge|PLC|deadman|WriteTag|SendUnitDataTransaction|countgroup|Crosswalk"
 	run("journald_amr", fmt.Sprintf(
 		"journalctl --since %q --no-pager -o short-iso 2>/dev/null | grep -Ei %q || true",
@@ -137,7 +138,8 @@ func (c *Client) FetchLogs(since time.Time, appLogPaths string) (map[string]stri
 	roboshopGrep := "AMR|10[.]216[.]35|SocketState|ConnectedState|UnconnectedState|ClosingState" +
 		"|remote host closed|Connect timeout|Add device failed|Not connected|slotTcpError" +
 		"|setLastError|timeout|disconnect|connected|19204|19205|19206|19207" +
-		"|error|failed|fatal|exception|segfault|scene|smap|map|upload|deploy|push"
+		"|error|failed|fatal|exception|segfault|scene|smap|map|upload|deploy|push" +
+		"|model|models|robot[.]cp|MD5|md5|checksum|chargeDI|charge[_ -]?DI|chargingDI|charging[_ -]?DI|charge|charging|charger|dock|docking|command|cmd"
 	run("roboshop_app", fmt.Sprintf(
 		"find /opt/Roboshop/bin/location/appInfo/log -type f -iname '*.log' -print0 2>/dev/null"+
 			" | xargs -0 awk -v start=%s -v end=%s"+
@@ -149,7 +151,8 @@ func (c *Client) FetchLogs(since time.Time, appLogPaths string) (map[string]stri
 	rdsGrep := "AMR|10[.]216[.]35|SocketState|ConnectedState|UnconnectedState|ClosingState" +
 		"|remote host closed|Connect timeout|Add device failed|Not connected|slotTcpError" +
 		"|setLastError|timeout|disconnect|connected|19204|19205|19206|19207" +
-		"|error|failed|fatal|exception|scene|smap|map|upload|deploy|push|mysql|database|segfault"
+		"|error|failed|fatal|exception|scene|smap|map|upload|deploy|push|mysql|database|segfault" +
+		"|model|models|robot[.]cp|MD5|md5|checksum|chargeDI|charge[_ -]?DI|chargingDI|charging[_ -]?DI|charge|charging|charger|dock|docking|command|cmd"
 	run("rds_file_logs",
 		"find /opt/data/rds /opt/data/rdscore /opt/data/robod -type f"+
 			" \\( -iname '*.log' -o -iname '*.out' -o -iname '*.err' \\) -mmin -1440 -print0 2>/dev/null"+
@@ -164,8 +167,8 @@ func (c *Client) FetchLogs(since time.Time, appLogPaths string) (map[string]stri
 
 	// -- RDS / Roboshop API, access, and audit logs. These are the most likely
 	// places to include who pushed a map and the client IP used for the upload.
-	mapAuditGrep := "map|smap|scene|upload|deploy|push|publish|import|POST|PUT|PATCH|user|username|operator|account|client|remote|remote_addr|source|ip|mac"
-	mapActionGrep := "map|smap|scene|upload|deploy|push|publish|import|POST|PUT|PATCH"
+	mapAuditGrep := "map|smap|scene|model|models|robot[.]cp|MD5|md5|checksum|chargeDI|charge[_ -]?DI|chargingDI|charging[_ -]?DI|charge|charging|charger|dock|docking|command|cmd|upload|deploy|push|publish|import|POST|PUT|PATCH|user|username|operator|account|client|remote|remote_addr|source|ip|mac"
+	mapActionGrep := "map|smap|scene|model|models|robot[.]cp|MD5|md5|checksum|chargeDI|charge[_ -]?DI|chargingDI|charging[_ -]?DI|charge|charging|charger|dock|docking|command|cmd|upload|deploy|push|publish|import|POST|PUT|PATCH"
 	run("rds_access_logs", fmt.Sprintf(
 		"find /var/log/nginx /var/log/apache2 /var/log/httpd /opt/data/rds /opt/data/rdscore /opt/data/robod /opt/Roboshop -type f"+
 			" \\( -iname '*access*.log*' -o -iname '*api*.log*' -o -iname '*http*.log*' -o -iname '*web*.log*' \\) -mmin -10080 -print0 2>/dev/null"+

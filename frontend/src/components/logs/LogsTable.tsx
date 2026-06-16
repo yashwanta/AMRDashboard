@@ -48,6 +48,29 @@ interface RdsMapLog {
   map?: string
 }
 
+interface RdsModelLog {
+  status?: 'successful' | 'failed' | 'changed'
+  user?: string
+  ip?: string
+  model?: string
+  md5?: string
+}
+
+interface ChargeCommandLog {
+  status?: 'successful' | 'failed' | 'sent'
+  user?: string
+  ip?: string
+  robot?: string
+  action?: string
+}
+
+interface ChargeDILog {
+  effect?: string
+  user?: string
+  ip?: string
+  model?: string
+}
+
 interface WarLinkLog {
   operation?: string
   tag?: string
@@ -142,6 +165,102 @@ function parseRdsMapLog(raw: string): RdsMapLog {
       /\bmap\s+name:\[([^\]]+)/i,
       /\b(?:map|smap|scene)[=: ]+([A-Za-z0-9_.@:/-]+)/i,
       /\b([A-Za-z0-9_.@:/-]+\.(?:smap|map|json|zip))\b/i,
+    ]),
+  }
+}
+
+function parseRdsModelLog(raw: string): RdsModelLog {
+  const lower = raw.toLowerCase()
+  const status = lower.includes('fail') || lower.includes('error') || lower.includes('no such file') || lower.includes('rollback')
+    ? 'failed'
+    : lower.includes('success') || lower.includes('complete') || lower.includes('saved') || lower.includes('updated') || lower.includes(' ok')
+      ? 'successful'
+      : lower.includes('modified') || lower.includes('changed') || lower.includes('written')
+        ? 'changed'
+        : undefined
+  return {
+    status,
+    user: firstMatch(raw, [
+      /\buser(?:name)?[=: ]+([A-Za-z0-9_.@-]+)/i,
+      /\boperator[=: ]+([A-Za-z0-9_.@-]+)/i,
+      /\baccount[=: ]+([A-Za-z0-9_.@-]+)/i,
+      /\bby\s+([A-Za-z0-9_.@-]+)/i,
+    ]),
+    ip: firstMatch(raw, [
+      /\b(?:client|source|remote|from|ip)[=: ]+([0-9]{1,3}(?:\.[0-9]{1,3}){3})/i,
+    ]),
+    model: firstMatch(raw, [
+      /\b(?:model|file|path)[=: ]+([A-Za-z0-9_.@:/-]+\.(?:cp|json|model|txt|xml))/i,
+      /\b([A-Za-z0-9_.@:/-]*models\/[A-Za-z0-9_.@:/-]+)/i,
+      /\b([A-Za-z0-9_.@:/-]*robot\.cp)\b/i,
+    ]),
+    md5: firstMatch(raw, [
+      /\bmd5(?:sum)?[=: ]+([a-f0-9]{32})/i,
+      /\bchecksum[=: ]+([a-f0-9]{32})/i,
+      /\b([a-f0-9]{32})\b/i,
+    ]),
+  }
+}
+
+function parseChargeCommandLog(raw: string): ChargeCommandLog {
+  const lower = raw.toLowerCase()
+  const status = lower.includes('fail') || lower.includes('error') || lower.includes('timeout') || lower.includes('reject')
+    ? 'failed'
+    : lower.includes('success') || lower.includes('accepted') || lower.includes('complete') || lower.includes(' ok')
+      ? 'successful'
+      : lower.includes('sent') || lower.includes('requested')
+        ? 'sent'
+        : undefined
+  return {
+    status,
+    user: firstMatch(raw, [
+      /\buser(?:name)?[=: ]+([A-Za-z0-9_.@-]+)/i,
+      /\boperator[=: ]+([A-Za-z0-9_.@-]+)/i,
+      /\baccount[=: ]+([A-Za-z0-9_.@-]+)/i,
+      /\bby\s+([A-Za-z0-9_.@-]+)/i,
+    ]),
+    ip: firstMatch(raw, [
+      /\b(?:client|source|remote|from|ip)[=: ]+([0-9]{1,3}(?:\.[0-9]{1,3}){3})/i,
+    ]),
+    robot: firstMatch(raw, [
+      /\b(?:robot|amr|vehicle|device)[=: ]+([A-Za-z0-9_.:@-]+)/i,
+      /\[Server:([0-9.]+:\d+)\]/i,
+    ]),
+    action: firstMatch(raw, [
+      /\b((?:charge|charging|charger|dock|docking)[A-Za-z0-9_.:/-]*\s+(?:command|cmd|task|mission|request))/i,
+      /\b((?:command|cmd|task|mission|request)[=: ]+[A-Za-z0-9_.:/-]*(?:charge|charging|charger|dock|docking)[A-Za-z0-9_.:/-]*)/i,
+    ]) ?? 'charge/dock command',
+  }
+}
+
+function parseChargeDILog(raw: string): ChargeDILog {
+  const lower = raw.toLowerCase()
+  const effect = lower.includes('broke') || lower.includes('break') || lower.includes('bad') || lower.includes('fail') || lower.includes('error')
+    ? 'possible break or bad chargeDI/model change'
+    : lower.includes('re-applied') || lower.includes('reapplied') || lower.includes('restored') || lower.includes('fix')
+      ? 'possible fix or re-apply'
+      : lower.includes('applied') || lower.includes('trigger')
+        ? 'chargeDI applied or trigger changed'
+        : lower.includes('comment')
+          ? 'comment or note was added after the fact'
+          : lower.includes('edit') || lower.includes('change') || lower.includes('update')
+            ? 'chargeDI edited or updated'
+            : undefined
+  return {
+    effect,
+    user: firstMatch(raw, [
+      /\buser(?:name)?[=: ]+([A-Za-z0-9_.@-]+)/i,
+      /\boperator[=: ]+([A-Za-z0-9_.@-]+)/i,
+      /\baccount[=: ]+([A-Za-z0-9_.@-]+)/i,
+      /\bby\s+([A-Za-z0-9_.@-]+)/i,
+    ]),
+    ip: firstMatch(raw, [
+      /\b(?:client|source|remote|from|ip|source ip)[=: ]+([0-9]{1,3}(?:\.[0-9]{1,3}){3})/i,
+      /\bfrom\s+([0-9]{1,3}(?:\.[0-9]{1,3}){3})\b/i,
+    ]),
+    model: firstMatch(raw, [
+      /\b(?:model|file|path|config)[=: ]+([A-Za-z0-9_.@:/-]+)/i,
+      /\b([A-Za-z0-9_.@:/-]*models\/[A-Za-z0-9_.@:/-]+)/i,
     ]),
   }
 }
@@ -275,6 +394,35 @@ function explainMessage(ev: LogEvent): string {
     if (map.map) parts.push(`for map ${map.map}`)
     return `${parts.join(' ')}.`
   }
+  if (ev.event_type === 'rds_model_update') {
+    const model = parseRdsModelLog(raw)
+    const parts = ['An RDS/Roboshop model-file change was recorded']
+    if (model.status) parts.push(`with status ${model.status}`)
+    if (model.user) parts.push(`by ${model.user}`)
+    if (model.ip) parts.push(`from IP ${model.ip}`)
+    if (model.model) parts.push(`for model file ${model.model}`)
+    if (model.md5) parts.push(`with MD5 ${model.md5}`)
+    return `${parts.join(' ')}.`
+  }
+  if (ev.event_type === 'roboshop_charge_command') {
+    const charge = parseChargeCommandLog(raw)
+    const parts = ['A Roboshop/RDS charge command was recorded']
+    if (charge.status) parts.push(`with status ${charge.status}`)
+    if (charge.action) parts.push(`for ${charge.action}`)
+    if (charge.robot) parts.push(`on robot ${charge.robot}`)
+    if (charge.user) parts.push(`by ${charge.user}`)
+    if (charge.ip) parts.push(`from IP ${charge.ip}`)
+    return `${parts.join(' ')}.`
+  }
+  if (ev.event_type === 'roboshop_chargedi_change') {
+    const chargeDI = parseChargeDILog(raw)
+    const parts = ['A Roboshop/RDS chargeDI change was recorded']
+    if (chargeDI.effect) parts.push(`with effect ${chargeDI.effect}`)
+    if (chargeDI.user) parts.push(`by ${chargeDI.user}`)
+    if (chargeDI.ip) parts.push(`from IP ${chargeDI.ip}`)
+    if (chargeDI.model) parts.push(`for model/config ${chargeDI.model}`)
+    return `${parts.join(' ')}.`
+  }
   if (ev.event_type === 'rds_core_issue') {
     if (message.includes('database') || message.includes('mysql') || message.includes('postgres')) return 'RDS appears to be having database trouble.'
     if (message.includes('timeout') || message.includes('timed out')) return 'RDS operation timed out.'
@@ -343,6 +491,15 @@ function suggestAction(ev: LogEvent): string | null {
     if (map.status === 'failed' || map.status === 'broken') return 'Review the RDS map update result, confirm which user/IP pushed it, and verify robots can load or use the updated map.'
     return 'Reference only: confirm the user/IP was expected and verify robot behavior after the map update.'
   }
+  if (ev.event_type === 'rds_model_update') {
+    return 'Reference only if expected: confirm who changed the model file or MD5/checksum, verify the source IP/user, and confirm robots can load the intended model after the change.'
+  }
+  if (ev.event_type === 'roboshop_charge_command') {
+    return 'Confirm whether the charge/dock command was expected, which robot received it, and whether the command succeeded. If it failed, check robot reachability, charger/dock state, and Roboshop/RDS command logs.'
+  }
+  if (ev.event_type === 'roboshop_chargedi_change') {
+    return 'Review the chargeDI change timeline, confirm the source IP/user was expected, and compare nearby robot charging behavior to see whether this change broke or restored charging.'
+  }
   if (ev.event_type === 'rds_core_issue') {
     return 'Check rdscore/RDS service status, recent RDS application logs, database connectivity, disk space, and API health. Keep the raw log for engineering or vendor review.'
   }
@@ -395,6 +552,34 @@ function friendlySummary(ev: LogEvent): string {
       map.mac ? `MAC ${map.mac}` : null,
       map.map ? `(${map.map})` : null,
     ].filter(Boolean).join(' ')
+  }
+  if (ev.event_type === 'rds_model_update') {
+    const model = parseRdsModelLog(raw)
+    return [
+      model.status ? `Model/MD5 ${model.status}` : 'Model/MD5 update',
+      model.user ? `by ${model.user}` : null,
+      model.ip ? `from ${model.ip}` : null,
+      model.md5 ? `MD5 ${model.md5.slice(0, 8)}...` : null,
+      model.model ? `(${model.model})` : null,
+    ].filter(Boolean).join(' ')
+  }
+  if (ev.event_type === 'roboshop_charge_command') {
+    const charge = parseChargeCommandLog(raw)
+    return [
+      charge.status ? `Charge command ${charge.status}` : 'Charge command',
+      charge.robot ? `for ${charge.robot}` : null,
+      charge.user ? `by ${charge.user}` : null,
+      charge.ip ? `from ${charge.ip}` : null,
+    ].filter(Boolean).join(' ')
+  }
+  if (ev.event_type === 'roboshop_chargedi_change') {
+    const chargeDI = parseChargeDILog(raw)
+    return [
+      'chargeDI',
+      chargeDI.effect ?? 'change recorded',
+      chargeDI.ip ? `from ${chargeDI.ip}` : null,
+      chargeDI.user ? `by ${chargeDI.user}` : null,
+    ].filter(Boolean).join(' - ')
   }
   if (ev.event_type === 'rds_core_issue') {
     const app = applicationName(ev)
@@ -620,6 +805,65 @@ export default function LogsTable({ events, loading }: Props) {
                               { label: 'Source IP', value: map.ip ?? '-' },
                               { label: 'MAC', value: map.mac ?? '-' },
                               { label: 'Map / Scene', value: map.map ?? '-' },
+                            ].map(field => (
+                              <div key={field.label} className="bg-gray-900 border border-gray-700 rounded-lg p-3">
+                                <div className="text-xs text-gray-500 mb-1">{field.label}</div>
+                                <div className="text-sm font-semibold text-gray-200 font-mono truncate">{field.value}</div>
+                              </div>
+                            ))
+                          })()}
+                        </div>
+                      )}
+
+                      {ev.event_type === 'rds_model_update' && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {(() => {
+                            const model = parseRdsModelLog(raw)
+                            return [
+                              { label: 'Result', value: model.status ?? 'recorded' },
+                              { label: 'User', value: model.user ?? '-' },
+                              { label: 'Source IP', value: model.ip ?? '-' },
+                              { label: 'Model file', value: model.model ?? '-' },
+                              { label: 'MD5 / checksum', value: model.md5 ?? '-' },
+                            ].map(field => (
+                              <div key={field.label} className="bg-gray-900 border border-gray-700 rounded-lg p-3">
+                                <div className="text-xs text-gray-500 mb-1">{field.label}</div>
+                                <div className="text-sm font-semibold text-gray-200 font-mono truncate">{field.value}</div>
+                              </div>
+                            ))
+                          })()}
+                        </div>
+                      )}
+
+                      {ev.event_type === 'roboshop_charge_command' && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {(() => {
+                            const charge = parseChargeCommandLog(raw)
+                            return [
+                              { label: 'Result', value: charge.status ?? 'recorded' },
+                              { label: 'Robot', value: charge.robot ?? '-' },
+                              { label: 'Action', value: charge.action ?? 'charge/dock command' },
+                              { label: 'User', value: charge.user ?? '-' },
+                              { label: 'Source IP', value: charge.ip ?? '-' },
+                            ].map(field => (
+                              <div key={field.label} className="bg-gray-900 border border-gray-700 rounded-lg p-3">
+                                <div className="text-xs text-gray-500 mb-1">{field.label}</div>
+                                <div className="text-sm font-semibold text-gray-200 font-mono truncate">{field.value}</div>
+                              </div>
+                            ))
+                          })()}
+                        </div>
+                      )}
+
+                      {ev.event_type === 'roboshop_chargedi_change' && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {(() => {
+                            const chargeDI = parseChargeDILog(raw)
+                            return [
+                              { label: 'Effect', value: chargeDI.effect ?? 'chargeDI change recorded' },
+                              { label: 'Source IP', value: chargeDI.ip ?? '-' },
+                              { label: 'User', value: chargeDI.user ?? '-' },
+                              { label: 'Model / config', value: chargeDI.model ?? '-' },
                             ].map(field => (
                               <div key={field.label} className="bg-gray-900 border border-gray-700 rounded-lg p-3">
                                 <div className="text-xs text-gray-500 mb-1">{field.label}</div>

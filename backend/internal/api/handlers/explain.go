@@ -30,6 +30,29 @@ type rdsMapDetails struct {
 	Map    string
 }
 
+type rdsModelDetails struct {
+	Status string
+	User   string
+	IP     string
+	Model  string
+	MD5    string
+}
+
+type chargeCommandDetails struct {
+	Status string
+	User   string
+	IP     string
+	Robot  string
+	Action string
+}
+
+type chargeDIDetails struct {
+	Effect string
+	User   string
+	IP     string
+	Model  string
+}
+
 func enrichLogEvent(ev *models.LogEvent) {
 	if ev == nil {
 		return
@@ -68,6 +91,63 @@ func PlainEnglishLog(ev models.LogEvent) string {
 		}
 		if details.Map != "" {
 			parts = append(parts, "for map "+details.Map)
+		}
+		return strings.Join(parts, " ") + "."
+	}
+	if ev.EventType == "rds_model_update" {
+		details := parseRDSModelDetails(raw)
+		parts := []string{"An RDS/Roboshop model-file change was recorded"}
+		if details.Status != "" {
+			parts = append(parts, "with status "+details.Status)
+		}
+		if details.User != "" {
+			parts = append(parts, "by "+details.User)
+		}
+		if details.IP != "" {
+			parts = append(parts, "from IP "+details.IP)
+		}
+		if details.Model != "" {
+			parts = append(parts, "for model file "+details.Model)
+		}
+		if details.MD5 != "" {
+			parts = append(parts, "with MD5 "+details.MD5)
+		}
+		return strings.Join(parts, " ") + "."
+	}
+	if ev.EventType == "roboshop_charge_command" {
+		details := parseChargeCommandDetails(raw)
+		parts := []string{"A Roboshop/RDS charge command was recorded"}
+		if details.Status != "" {
+			parts = append(parts, "with status "+details.Status)
+		}
+		if details.Action != "" {
+			parts = append(parts, "for "+details.Action)
+		}
+		if details.Robot != "" {
+			parts = append(parts, "on robot "+details.Robot)
+		}
+		if details.User != "" {
+			parts = append(parts, "by "+details.User)
+		}
+		if details.IP != "" {
+			parts = append(parts, "from IP "+details.IP)
+		}
+		return strings.Join(parts, " ") + "."
+	}
+	if ev.EventType == "roboshop_chargedi_change" {
+		details := parseChargeDIDetails(raw)
+		parts := []string{"A Roboshop/RDS chargeDI change was recorded"}
+		if details.Effect != "" {
+			parts = append(parts, "with effect "+details.Effect)
+		}
+		if details.User != "" {
+			parts = append(parts, "by "+details.User)
+		}
+		if details.IP != "" {
+			parts = append(parts, "from IP "+details.IP)
+		}
+		if details.Model != "" {
+			parts = append(parts, "for model/config "+details.Model)
 		}
 		return strings.Join(parts, " ") + "."
 	}
@@ -173,6 +253,12 @@ func PlainEnglishLog(ev models.LogEvent) string {
 		return "RDS core logged an API, database, timeout, service, or connection issue."
 	case "rds_map_update":
 		return "An RDS map update, upload, deploy, or push event was recorded."
+	case "rds_model_update":
+		return "An RDS or Roboshop model file, MD5, or checksum change event was recorded."
+	case "roboshop_charge_command":
+		return "A Roboshop or RDS robot charge/dock command event was recorded."
+	case "roboshop_chargedi_change":
+		return "A Roboshop or RDS chargeDI edit, apply, trigger, model, or comment event was recorded."
 	case "warlink_failure":
 		return "WarLink reported a PLC communication failure."
 	case "service_failure":
@@ -214,6 +300,15 @@ func RecommendedAction(ev models.LogEvent) string {
 			return "Review the RDS map update result, confirm which user/IP pushed it, and verify robots can load or use the updated map."
 		}
 		return "Reference only. Confirm the user/IP was expected and verify robot behavior after the map update."
+	}
+	if ev.EventType == "rds_model_update" {
+		return "Reference only if expected. Confirm who changed the model file or MD5/checksum, verify the source IP/user, and confirm robots can load the intended model after the change."
+	}
+	if ev.EventType == "roboshop_charge_command" {
+		return "Confirm whether the charge/dock command was expected, which robot received it, and whether the command succeeded. If it failed, check robot reachability, charger/dock state, and Roboshop/RDS command logs."
+	}
+	if ev.EventType == "roboshop_chargedi_change" {
+		return "Review the chargeDI change timeline, confirm the source IP/user was expected, and compare nearby robot charging behavior to see whether this change broke or restored charging."
 	}
 	if ev.EventType == "rds_core_issue" {
 		return "Check rdscore/RDS service status, recent RDS application logs, database connectivity, disk space, and API health. Keep the raw log for vendor or engineering review."
@@ -358,6 +453,105 @@ func parseRDSMapDetails(raw string) rdsMapDetails {
 		`(?i)\bmap\s+name:\[([^\]]+)`,
 		`(?i)\b(?:map|smap|scene)[=: ]+([A-Za-z0-9_.@:/-]+)`,
 		`(?i)\b([A-Za-z0-9_.@:/-]+\.(?:smap|map|json|zip))\b`,
+	)
+	return out
+}
+
+func parseRDSModelDetails(raw string) rdsModelDetails {
+	lower := strings.ToLower(raw)
+	out := rdsModelDetails{}
+	switch {
+	case strings.Contains(lower, "fail") || strings.Contains(lower, "error") || strings.Contains(lower, "no such file") || strings.Contains(lower, "rollback"):
+		out.Status = "failed"
+	case strings.Contains(lower, "success") || strings.Contains(lower, "complete") || strings.Contains(lower, "saved") || strings.Contains(lower, "updated") || strings.Contains(lower, " ok"):
+		out.Status = "successful"
+	case strings.Contains(lower, "modified") || strings.Contains(lower, "changed") || strings.Contains(lower, "written"):
+		out.Status = "changed"
+	}
+	out.User = firstRegex(raw,
+		`(?i)\buser(?:name)?[=: ]+([A-Za-z0-9_.@-]+)`,
+		`(?i)\boperator[=: ]+([A-Za-z0-9_.@-]+)`,
+		`(?i)\baccount[=: ]+([A-Za-z0-9_.@-]+)`,
+		`(?i)\bby\s+([A-Za-z0-9_.@-]+)`,
+	)
+	out.IP = firstRegex(raw,
+		`(?i)\b(?:client|source|remote|from|ip)[=: ]+([0-9]{1,3}(?:\.[0-9]{1,3}){3})`,
+	)
+	out.Model = firstRegex(raw,
+		`(?i)\b(?:model|file|path)[=: ]+([A-Za-z0-9_.@:/-]+\.(?:cp|json|model|txt|xml))`,
+		`(?i)\b([A-Za-z0-9_.@:/-]*models/[A-Za-z0-9_.@:/-]+)`,
+		`(?i)\b([A-Za-z0-9_.@:/-]*robot\.cp)\b`,
+	)
+	out.MD5 = firstRegex(raw,
+		`(?i)\bmd5(?:sum)?[=: ]+([a-f0-9]{32})`,
+		`(?i)\bchecksum[=: ]+([a-f0-9]{32})`,
+		`\b([a-f0-9]{32})\b`,
+	)
+	return out
+}
+
+func parseChargeCommandDetails(raw string) chargeCommandDetails {
+	lower := strings.ToLower(raw)
+	out := chargeCommandDetails{Action: "charge/dock command"}
+	switch {
+	case strings.Contains(lower, "fail") || strings.Contains(lower, "error") || strings.Contains(lower, "timeout") || strings.Contains(lower, "reject"):
+		out.Status = "failed"
+	case strings.Contains(lower, "success") || strings.Contains(lower, "accepted") || strings.Contains(lower, "complete") || strings.Contains(lower, " ok"):
+		out.Status = "successful"
+	case strings.Contains(lower, "sent") || strings.Contains(lower, "requested"):
+		out.Status = "sent"
+	}
+	out.User = firstRegex(raw,
+		`(?i)\buser(?:name)?[=: ]+([A-Za-z0-9_.@-]+)`,
+		`(?i)\boperator[=: ]+([A-Za-z0-9_.@-]+)`,
+		`(?i)\baccount[=: ]+([A-Za-z0-9_.@-]+)`,
+		`(?i)\bby\s+([A-Za-z0-9_.@-]+)`,
+	)
+	out.IP = firstRegex(raw,
+		`(?i)\b(?:client|source|remote|from|ip)[=: ]+([0-9]{1,3}(?:\.[0-9]{1,3}){3})`,
+	)
+	out.Robot = firstRegex(raw,
+		`(?i)\b(?:robot|amr|vehicle|device)[=: ]+([A-Za-z0-9_.:@-]+)`,
+		`(?i)\[Server:([0-9.]+:\d+)\]`,
+	)
+	out.Action = firstRegex(raw,
+		`(?i)\b((?:charge|charging|charger|dock|docking)[A-Za-z0-9_.:/-]*\s+(?:command|cmd|task|mission|request))`,
+		`(?i)\b((?:command|cmd|task|mission|request)[=: ]+[A-Za-z0-9_.:/-]*(?:charge|charging|charger|dock|docking)[A-Za-z0-9_.:/-]*)`,
+	)
+	if out.Action == "" {
+		out.Action = "charge/dock command"
+	}
+	return out
+}
+
+func parseChargeDIDetails(raw string) chargeDIDetails {
+	lower := strings.ToLower(raw)
+	out := chargeDIDetails{}
+	switch {
+	case strings.Contains(lower, "broke") || strings.Contains(lower, "break") || strings.Contains(lower, "bad") || strings.Contains(lower, "fail") || strings.Contains(lower, "error"):
+		out.Effect = "possible break or bad chargeDI/model change"
+	case strings.Contains(lower, "re-applied") || strings.Contains(lower, "reapplied") || strings.Contains(lower, "restored") || strings.Contains(lower, "fix"):
+		out.Effect = "possible fix or re-apply"
+	case strings.Contains(lower, "applied") || strings.Contains(lower, "trigger"):
+		out.Effect = "chargeDI applied or trigger changed"
+	case strings.Contains(lower, "comment"):
+		out.Effect = "comment or note was added after the fact"
+	case strings.Contains(lower, "edit") || strings.Contains(lower, "change") || strings.Contains(lower, "update"):
+		out.Effect = "chargeDI edited or updated"
+	}
+	out.User = firstRegex(raw,
+		`(?i)\buser(?:name)?[=: ]+([A-Za-z0-9_.@-]+)`,
+		`(?i)\boperator[=: ]+([A-Za-z0-9_.@-]+)`,
+		`(?i)\baccount[=: ]+([A-Za-z0-9_.@-]+)`,
+		`(?i)\bby\s+([A-Za-z0-9_.@-]+)`,
+	)
+	out.IP = firstRegex(raw,
+		`(?i)\b(?:client|source|remote|from|ip|source ip)[=: ]+([0-9]{1,3}(?:\.[0-9]{1,3}){3})`,
+		`(?i)\bfrom\s+([0-9]{1,3}(?:\.[0-9]{1,3}){3})\b`,
+	)
+	out.Model = firstRegex(raw,
+		`(?i)\b(?:model|file|path|config)[=: ]+([A-Za-z0-9_.@:/-]+)`,
+		`(?i)\b([A-Za-z0-9_.@:/-]*models/[A-Za-z0-9_.@:/-]+)`,
 	)
 	return out
 }

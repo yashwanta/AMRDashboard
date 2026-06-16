@@ -230,7 +230,7 @@ func (h *RAGHandler) searchEvents(r *http.Request, question string) ([]ragSource
 		argN += 3
 	}
 	if isRDSQuestion(question) {
-		where += " AND (le.event_type IN ('rds_core_issue','rds_map_update') OR le.message ILIKE $" + strconv.Itoa(argN) + " OR le.raw_line ILIKE $" + strconv.Itoa(argN) + " OR le.source ILIKE $" + strconv.Itoa(argN) + ")"
+		where += " AND (le.event_type IN ('rds_core_issue','rds_map_update','rds_model_update','roboshop_charge_command','roboshop_chargedi_change') OR le.message ILIKE $" + strconv.Itoa(argN) + " OR le.raw_line ILIKE $" + strconv.Itoa(argN) + " OR le.source ILIKE $" + strconv.Itoa(argN) + ")"
 		args = append(args, "%rds%")
 		argN++
 	}
@@ -310,6 +310,24 @@ func buildRAGSuggestions(counts map[string]int) []ragSuggestion {
 			EventType:   "rds_map_update",
 		},
 		{
+			Question:    "Which RDS model files or MD5 checksums changed?",
+			Category:    "RDS Model / MD5",
+			Description: "Finds Roboshop/RDS model-file changes, MD5/checksum values, user, source IP, and result.",
+			EventType:   "rds_model_update",
+		},
+		{
+			Question:    "Which Roboshop charge commands were sent and did they succeed?",
+			Category:    "Roboshop Charge",
+			Description: "Reviews charge/dock commands, robot target, command result, user, source IP, and raw log evidence.",
+			EventType:   "roboshop_charge_command",
+		},
+		{
+			Question:    "Who changed chargeDI and did it break charging?",
+			Category:    "Roboshop chargeDI",
+			Description: "Builds a chargeDI timeline with effect, source IP, user, model/config evidence, and raw logs.",
+			EventType:   "roboshop_chargedi_change",
+		},
+		{
 			Question:    "Which servers or workstations are missing patches?",
 			Category:    "Patching",
 			Description: "Summarizes OpsForge patch inventory from list/preview upgrade runs.",
@@ -371,7 +389,16 @@ func isRDSQuestion(question string) bool {
 		strings.Contains(q, "rdscore") ||
 		strings.Contains(q, "map") ||
 		strings.Contains(q, "scene") ||
-		strings.Contains(q, "smap")
+		strings.Contains(q, "smap") ||
+		strings.Contains(q, "model") ||
+		strings.Contains(q, "md5") ||
+		strings.Contains(q, "checksum") ||
+		strings.Contains(q, "charge") ||
+		strings.Contains(q, "chargedi") ||
+		strings.Contains(q, "charge_di") ||
+		strings.Contains(q, "charging") ||
+		strings.Contains(q, "charger") ||
+		strings.Contains(q, "dock")
 }
 
 func isWarLinkQuestion(question string) bool {
@@ -435,6 +462,30 @@ func eventQuestionRank(question string, ev ragSourceEvent) int {
 			return 0
 		}
 		if ev.EventType == "ssh_login_activity" {
+			return 1
+		}
+		return 20
+	case strings.Contains(q, "model") || strings.Contains(q, "md5") || strings.Contains(q, "checksum"):
+		if ev.EventType == "rds_model_update" {
+			return 0
+		}
+		if strings.Contains(raw, "model") || strings.Contains(raw, "md5") || strings.Contains(raw, "checksum") || strings.Contains(raw, "robot.cp") {
+			return 1
+		}
+		return 20
+	case strings.Contains(q, "chargedi") || strings.Contains(q, "charge_di") || strings.Contains(q, "charge-di") || strings.Contains(q, "charge di"):
+		if ev.EventType == "roboshop_chargedi_change" {
+			return 0
+		}
+		if strings.Contains(raw, "chargedi") || strings.Contains(raw, "charge_di") || strings.Contains(raw, "charge-di") || strings.Contains(raw, "charge di") {
+			return 1
+		}
+		return 20
+	case strings.Contains(q, "charge") || strings.Contains(q, "charging") || strings.Contains(q, "charger") || strings.Contains(q, "dock"):
+		if ev.EventType == "roboshop_charge_command" {
+			return 0
+		}
+		if strings.Contains(raw, "charge") || strings.Contains(raw, "charging") || strings.Contains(raw, "charger") || strings.Contains(raw, "dock") {
 			return 1
 		}
 		return 20
@@ -686,6 +737,9 @@ func buildRDSAnswer(question string, events []ragSourceEvent) string {
 		raw := strings.ToLower(ev.RawLine + " " + ev.Message + " " + ev.Source + " " + ev.EventType)
 		return ev.EventType == "rds_core_issue" ||
 			ev.EventType == "rds_map_update" ||
+			ev.EventType == "rds_model_update" ||
+			ev.EventType == "roboshop_charge_command" ||
+			ev.EventType == "roboshop_chargedi_change" ||
 			strings.Contains(raw, "rds") ||
 			strings.Contains(raw, "rdscore") ||
 			strings.Contains(raw, "roboshop")
@@ -696,6 +750,9 @@ func buildRDSAnswer(question string, events []ragSourceEvent) string {
 	first := rdsEvents[0]
 	coreCount := 0
 	mapCount := 0
+	modelCount := 0
+	chargeCount := 0
+	chargeDICount := 0
 	for _, ev := range rdsEvents {
 		if ev.EventType == "rds_core_issue" {
 			coreCount++
@@ -703,8 +760,26 @@ func buildRDSAnswer(question string, events []ragSourceEvent) string {
 		if ev.EventType == "rds_map_update" {
 			mapCount++
 		}
+		if ev.EventType == "rds_model_update" {
+			modelCount++
+		}
+		if ev.EventType == "roboshop_charge_command" {
+			chargeCount++
+		}
+		if ev.EventType == "roboshop_chargedi_change" {
+			chargeDICount++
+		}
 	}
 	signals := []string{}
+	if anyRAGEventContains(rdsEvents, "md5") || anyRAGEventContains(rdsEvents, "checksum") || anyRAGEventContains(rdsEvents, "robot.cp") || anyRAGEventContains(rdsEvents, "model") {
+		signals = append(signals, "model/MD5 changes")
+	}
+	if anyRAGEventContains(rdsEvents, "charge") || anyRAGEventContains(rdsEvents, "charging") || anyRAGEventContains(rdsEvents, "charger") || anyRAGEventContains(rdsEvents, "dock") {
+		signals = append(signals, "charge/dock commands")
+	}
+	if anyRAGEventContains(rdsEvents, "chargedi") || anyRAGEventContains(rdsEvents, "charge_di") || anyRAGEventContains(rdsEvents, "charge-di") || anyRAGEventContains(rdsEvents, "charge di") {
+		signals = append(signals, "chargeDI changes")
+	}
 	if anyRAGEventContains(rdsEvents, "database") || anyRAGEventContains(rdsEvents, "mysql") || anyRAGEventContains(rdsEvents, "postgres") {
 		signals = append(signals, "database trouble")
 	}
@@ -721,10 +796,13 @@ func buildRDSAnswer(question string, events []ragSourceEvent) string {
 		signals = append(signals, "RDS log issues")
 	}
 	return fmt.Sprintf(
-		"Across the current SiteOps logs, I found %d RDS-related event(s): %d core issue(s) and %d map/update event(s). The strongest signal is %s on %s. Latest evidence is from %s at %s: %s. Recommended checks: rdscore service status, RDS API health, database connectivity, disk space, and recent map/update activity. Raw logs are kept below for reference.",
+		"Across the current SiteOps logs, I found %d RDS-related event(s): %d core issue(s), %d map/update event(s), %d model/MD5 event(s), %d charge command event(s), and %d chargeDI event(s). The strongest signal is %s on %s. Latest evidence is from %s at %s: %s. Recommended checks: rdscore service status, RDS API health, database connectivity, disk space, recent map/model changes, MD5/checksum evidence, charge command results, and chargeDI timeline/source IP evidence. Raw logs are kept below for reference.",
 		len(rdsEvents),
 		coreCount,
 		mapCount,
+		modelCount,
+		chargeCount,
+		chargeDICount,
 		joinHuman(signals),
 		first.ServerName,
 		first.Source,

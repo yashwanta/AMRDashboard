@@ -157,6 +157,15 @@ func ParseLine(line, source string, serverID int) *models.LogEvent {
 	if source == "rds_network_neighbors" {
 		return newEvent(serverID, ts, "unknown", "low", line, source)
 	}
+	if severity, ok := classifyChargeDIChange(matchLine, source); ok {
+		return newEvent(serverID, ts, "roboshop_chargedi_change", severity, line, source)
+	}
+	if severity, ok := classifyRDSModelUpdate(matchLine, source); ok {
+		return newEvent(serverID, ts, "rds_model_update", severity, line, source)
+	}
+	if severity, ok := classifyRoboshopChargeCommand(matchLine, source); ok {
+		return newEvent(serverID, ts, "roboshop_charge_command", severity, line, source)
+	}
 	if severity, ok := classifyRDSMapUpdate(matchLine, source); ok {
 		return newEvent(serverID, ts, "rds_map_update", severity, line, source)
 	}
@@ -231,6 +240,86 @@ func classifyRDSMapUpdate(line, source string) (string, bool) {
 		return "", false
 	}
 	if hasAny(line, "fail", "failed", "failure", "error", "break", "broken", "rollback") {
+		return "high", true
+	}
+	return "info", true
+}
+
+func classifyRDSModelUpdate(line, source string) (string, bool) {
+	source = strings.ToLower(source)
+	sourceOK := strings.Contains(source, "rds") ||
+		strings.Contains(source, "roboshop") ||
+		strings.Contains(source, "journald_amr") ||
+		strings.Contains(line, "roboshop") ||
+		strings.Contains(line, "rds") ||
+		strings.Contains(line, "rdscore")
+	if !sourceOK {
+		return "", false
+	}
+	hasModelSubject := hasAny(line,
+		"model file", "models/", "/models/", "robot.cp", ".cp",
+		"model=", "model:", "model name", "robot model", "md5", "checksum",
+	)
+	hasAction := hasAny(line,
+		"modify", "modified", "change", "changed", "update", "updated",
+		"save", "saved", "write", "written", "load", "loaded",
+		"open file failed", "no such file", "delete", "deleted",
+	)
+	if !hasModelSubject || !hasAction {
+		return "", false
+	}
+	if hasAny(line, "fail", "failed", "failure", "error", "no such file", "denied", "rollback") {
+		return "high", true
+	}
+	return "info", true
+}
+
+func classifyRoboshopChargeCommand(line, source string) (string, bool) {
+	source = strings.ToLower(source)
+	sourceOK := strings.Contains(source, "roboshop") ||
+		strings.Contains(source, "rds") ||
+		strings.Contains(source, "journald_amr") ||
+		strings.Contains(line, "roboshop") ||
+		strings.Contains(line, "rdscore") ||
+		strings.Contains(line, "rds")
+	if !sourceOK {
+		return "", false
+	}
+	hasCharge := hasAny(line, "charge", "charging", "charger", "dock", "docking")
+	hasCommand := hasAny(line,
+		"command", "cmd", "order", "task", "mission", "dispatch",
+		"send", "sent", "request", "requested", "post", "api", "execute",
+	)
+	if !hasCharge || !hasCommand {
+		return "", false
+	}
+	if hasAny(line, "fail", "failed", "failure", "error", "timeout", "denied", "reject", "rejected", "returned 4", "returned 5") {
+		return "high", true
+	}
+	return "info", true
+}
+
+func classifyChargeDIChange(line, source string) (string, bool) {
+	source = strings.ToLower(source)
+	sourceOK := strings.Contains(source, "roboshop") ||
+		strings.Contains(source, "rds") ||
+		strings.Contains(source, "journald_amr") ||
+		strings.Contains(line, "roboshop") ||
+		strings.Contains(line, "rdscore") ||
+		strings.Contains(line, "rds")
+	if !sourceOK {
+		return "", false
+	}
+	hasChargeDI := hasAny(line, "chargedi", "charge_di", "charge-di", "charge di", "chargingdi", "charging_di", "charging di")
+	hasAction := hasAny(line,
+		"edit", "edited", "apply", "applied", "set", "change", "changed",
+		"update", "updated", "trigger", "triggered", "model", "config",
+		"comment", "commented", "save", "saved", "write", "written",
+	)
+	if !hasChargeDI || !hasAction {
+		return "", false
+	}
+	if hasAny(line, "break", "broke", "bad", "fail", "failed", "failure", "error", "rollback") {
 		return "high", true
 	}
 	return "info", true
